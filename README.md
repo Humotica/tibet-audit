@@ -52,6 +52,8 @@ $ tibet-audit call-mama --webhook https://slack.webhook.url
 | `--auto` | Fix everything automatically | 3 AM, one hand on baby |
 | `--cry` | Verbose mode, all details | When everything is on fire |
 | `--call-mama` | Call M.A.M.A. (Mission Assurance & Monitoring Agent) | When the diaper is too dirty |
+| `--require-signoff` | Require human verification before RESOLVED | When jurists need to approve |
+| `--sovereign` | 🏴 No cloud APIs, fully local | When data can't leave your infra |
 
 **Why "Diaper Protocol"?**
 
@@ -70,6 +72,74 @@ Because sometimes you just need to see EVERYTHING. All the passed checks, all th
 M.A.M.A. = **Mission Assurance & Monitoring Agent**
 
 Because when the diaper is too dirty to handle alone, you call for backup. M.A.M.A. generates a full compliance report and sends it to your team, your Slack channel, or your compliance officer. When things get serious, you need the big guns.
+
+---
+
+## ⚖️ JIS Sign-off - Human Verification
+
+> *"TIBET prepares, Human verifies, JIS seals."*
+
+For regulated industries where AI-generated compliance assessments need human approval:
+
+```bash
+# Fix with sign-off requirement
+tibet-audit fix --require-signoff --reviewer "Eva de Vries, Jurist"
+
+# Check pending sign-offs
+tibet-audit signoff list
+
+# Approve a sign-off (human step)
+tibet-audit signoff approve abc123 --comment "Reviewed and approved"
+
+# Cryptographically seal with JIS bilateral consent
+tibet-audit signoff seal abc123
+```
+
+### The Sign-off Flow
+
+```
+AI Scan → Fix → PENDING_REVIEW → approve → HUMAN_VERIFIED → seal → JIS_SEALED
+                     ↑                                              ↓
+              Jurist reviews                              Cryptographic proof
+```
+
+**Why Sign-off?**
+
+Because a tool can generate compliance documents, but a *human* needs to verify the legal nuances. This addresses the #1 criticism of automated compliance: "AI can't replace a jurist."
+
+We agree. That's why:
+- **AI does 80%**: The scanning, fixing, document generation
+- **Human does 20%**: The verification, the judgment call, the signature
+- **JIS seals 100%**: Cryptographic proof of who verified what, when
+
+---
+
+## 🏴 Sovereign Mode - No Cloud Required
+
+> *"Your compliance, your infrastructure, your sovereignty."*
+
+For organizations that can't send data to external APIs:
+
+```bash
+# Scan with full sovereignty - no cloud APIs
+tibet-audit scan --sovereign
+
+# Fix with sovereignty + sign-off
+tibet-audit fix --sovereign --require-signoff
+
+# Ultimate paranoia mode
+tibet-audit fix --sovereign --require-signoff -r "Internal Auditor"
+```
+
+**What Sovereign Mode Does:**
+- All checks run locally (no API calls to OpenAI, Anthropic, Google)
+- Can use local models via OomLlama for AI-powered checks
+- Sets `TIBET_SOVEREIGN_MODE=1` environment variable for downstream tools
+- Perfect for air-gapped environments, government, healthcare
+
+**What It Doesn't Do:**
+- The `--high-five` ping still requires network (but you can skip it)
+- Some advanced semantic checks may be degraded without cloud AI
 
 ---
 

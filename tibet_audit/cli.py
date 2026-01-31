@@ -113,6 +113,7 @@ def scan(
     cry: bool = typer.Option(False, "--cry", help="Verbose mode - for when things are really bad"),
     profile: str = typer.Option("default", "--profile", "-p", help="Profile: default, enterprise, dev"),
     high_five: bool = typer.Option(False, "--high-five", help="Signed handshake ping (opt-in)"),
+    sovereign: bool = typer.Option(False, "--sovereign", help="🏴 Sovereign mode: no cloud APIs, fully local inference"),
 ):
     """
     Scan for compliance issues and get a health score.
@@ -122,12 +123,22 @@ def scan(
         tibet-audit scan ./my-project
         tibet-audit scan --categories gdpr,ai_act
         tibet-audit scan --cry              # When you need ALL the details
+        tibet-audit scan --sovereign        # 🏴 No cloud, fully local
     """
     machine_output = output.lower() != "terminal"
     quiet = quiet or machine_output
 
     if not quiet:
         check_for_updates()
+
+    if sovereign:
+        console.print("[bold cyan]🏴 SOVEREIGN MODE[/]")
+        console.print("[dim]   All checks run locally. No data leaves your machine.[/]")
+        console.print("[dim]   \"Your compliance, your infrastructure, your sovereignty.\"[/]")
+        console.print()
+        # Set environment variable for checks to respect
+        import os
+        os.environ["TIBET_SOVEREIGN_MODE"] = "1"
 
     if cry:
         console.print("[bold red]😭 CRY MODE ACTIVATED - Full verbose output[/]")
@@ -141,7 +152,7 @@ def scan(
     cat_list = categories.split(",") if categories else None
 
     # Run scan
-    audit = TIBETAudit()
+    audit = TIBETAudit(sovereign_mode=sovereign)
 
     if cry:
         # Cry mode: show live progress Lynis-style
@@ -201,6 +212,10 @@ def fix(
     auto: bool = typer.Option(False, "--auto", "-a", help="🍼 Diaper Protocol: fix everything, no questions"),
     wet_wipe: bool = typer.Option(False, "--wet-wipe", "-w", help="Preview what would be fixed (like --dry-run but funnier)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Same as --wet-wipe"),
+    require_signoff: bool = typer.Option(False, "--require-signoff", "-s", help="⚖️ Require human sign-off before RESOLVED state"),
+    reviewer: Optional[str] = typer.Option(None, "--reviewer", "-r", help="Reviewer name for sign-off (e.g., 'Eva de Vries, Jurist')"),
+    reviewer_did: Optional[str] = typer.Option(None, "--reviewer-did", help="Reviewer DID (e.g., 'did:jis:jurist:eva.devries')"),
+    sovereign: bool = typer.Option(False, "--sovereign", help="🏴 Sovereign mode: no cloud APIs, fully local"),
 ):
     """
     Fix compliance issues automatically.
@@ -208,10 +223,16 @@ def fix(
     The Diaper Protocol™: For when you have one hand on the baby
     and one on the keyboard.
 
+    With --require-signoff: "TIBET prepares, Human verifies, JIS seals."
+    With --sovereign: No cloud APIs, fully local inference.
+
     Examples:
         tibet-audit fix                    # Interactive fix
         tibet-audit fix --wet-wipe         # Preview fixes
         tibet-audit fix --auto             # 🍼 Fix everything, no questions
+        tibet-audit fix --require-signoff  # ⚖️ Create sign-off request after fix
+        tibet-audit fix -s -r "Eva de Vries, Jurist"  # With reviewer info
+        tibet-audit fix --sovereign --require-signoff  # 🏴⚖️ Full sovereignty + human verification
     """
     # --wet-wipe is an alias for --dry-run
     preview_only = wet_wipe or dry_run
@@ -221,6 +242,13 @@ def fix(
     else:
         console.print(BANNER.format(version=__version__))
 
+    if sovereign:
+        console.print("[bold cyan]🏴 SOVEREIGN MODE[/]")
+        console.print("[dim]   All operations run locally. No data leaves your machine.[/]")
+        console.print()
+        import os
+        os.environ["TIBET_SOVEREIGN_MODE"] = "1"
+
     # First, scan
     with Progress(
         SpinnerColumn(),
@@ -229,7 +257,7 @@ def fix(
         transient=True,
     ) as progress:
         progress.add_task("Scanning for fixable issues...", total=None)
-        audit = TIBETAudit()
+        audit = TIBETAudit(sovereign_mode=sovereign)
         result = audit.scan(path)
 
     # Get fixable issues
@@ -255,20 +283,26 @@ def fix(
         console.print("[yellow]🧻 Wet-wipe mode: No changes made. Run without --wet-wipe to apply fixes.[/]")
         return
 
+    fixed_count = 0
     if auto:
         # Diaper Protocol: just do it
         console.print("[bold yellow]🍼 Diaper Protocol: Applying all fixes...[/]\n")
-        _apply_fixes(fixable)
+        fixed_count = _apply_fixes(fixable)
     else:
         # Interactive mode
         if typer.confirm("Apply these fixes?"):
-            _apply_fixes(fixable)
+            fixed_count = _apply_fixes(fixable)
         else:
             console.print("[dim]No changes made.[/]")
+            return
+
+    # Handle sign-off requirement
+    if require_signoff and fixed_count > 0:
+        _create_signoff_request(result, fixed_count, reviewer, reviewer_did)
 
 
-def _apply_fixes(issues: List):
-    """Apply fixes for issues."""
+def _apply_fixes(issues: List) -> int:
+    """Apply fixes for issues. Returns count of successful fixes."""
     import subprocess
 
     fixed = 0
@@ -293,6 +327,44 @@ def _apply_fixes(issues: List):
     console.print(f"[bold green]🎉 Done! Fixed: {fixed}, Failed: {failed}[/]")
     console.print()
     console.print("[dim]Run 'tibet-audit scan' to verify improvements.[/]")
+    return fixed
+
+
+def _create_signoff_request(result, fixed_count: int, reviewer: Optional[str], reviewer_did: Optional[str]):
+    """Create a sign-off request after fixes are applied."""
+    from .signoff import SignoffManager, create_signoff_prompt
+
+    console.print()
+    console.print("[bold cyan]⚖️  SIGN-OFF REQUIRED[/]")
+    console.print("[dim]\"TIBET prepares, Human verifies, JIS seals.\"[/]")
+    console.print()
+
+    manager = SignoffManager()
+    record = manager.create_signoff_request(
+        scan_id=result.scan_id,
+        scan_path=result.scan_path,
+        scan_score=result.score,
+        scan_grade=result.grade,
+        issues_fixed=fixed_count,
+        tool_version=__version__
+    )
+
+    # If reviewer info provided, start review immediately
+    if reviewer:
+        record = manager.start_review(record.signoff_id, reviewer, reviewer_did)
+        console.print(f"[green]✓[/] Reviewer assigned: {reviewer}")
+        if reviewer_did:
+            console.print(f"[green]✓[/] Reviewer DID: {reviewer_did}")
+
+    console.print(create_signoff_prompt(record))
+    console.print(f"[bold]Sign-off ID: [cyan]{record.signoff_id}[/][/]")
+    console.print()
+    console.print("[dim]To approve and seal:[/]")
+    console.print(f"  [cyan]tibet-audit signoff approve {record.signoff_id}[/]")
+    console.print(f"  [cyan]tibet-audit signoff seal {record.signoff_id}[/]")
+    console.print()
+    console.print("[dim]Or view all pending sign-offs:[/]")
+    console.print("  [cyan]tibet-audit signoff list[/]")
 
 
 @app.command("list")
@@ -1395,6 +1467,237 @@ def checkpoint_matrix(
     console.print(table)
     console.print()
     console.print("[dim]Run 'tibet-audit checkpoint --from X --to Y' for detailed translation[/]")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIGN-OFF COMMANDS (Jurist Verification)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SIGNOFF_BANNER = """
+[bold cyan]══════════════════════════════════════════════════════════════════════════════[/]
+[bold cyan]  ⚖️  TIBET SIGN-OFF - Human Verification with JIS Bilateral Consent[/]
+[dim]  "TIBET prepares, Human verifies, JIS seals."[/]
+[bold cyan]══════════════════════════════════════════════════════════════════════════════[/]
+"""
+
+signoff_app = typer.Typer(
+    name="signoff",
+    help="Manage sign-off requests for compliance verification",
+    add_completion=False,
+)
+app.add_typer(signoff_app, name="signoff")
+
+
+@signoff_app.command("list")
+def signoff_list():
+    """List all pending sign-off requests."""
+    from .signoff import SignoffManager, SignoffState
+
+    console.print(SIGNOFF_BANNER)
+
+    manager = SignoffManager()
+    pending = manager.list_pending()
+
+    if not pending:
+        console.print("[green]✅ No pending sign-offs. All compliance assessments are verified![/]")
+        return
+
+    table = Table(title="Pending Sign-offs", box=box.ROUNDED)
+    table.add_column("ID", style="cyan", width=14)
+    table.add_column("Path", width=30)
+    table.add_column("Score", justify="right", width=8)
+    table.add_column("Fixed", justify="right", width=8)
+    table.add_column("State", width=15)
+    table.add_column("Reviewer", width=20)
+
+    state_colors = {
+        SignoffState.PENDING_REVIEW: "yellow",
+        SignoffState.UNDER_REVIEW: "blue",
+    }
+
+    for record in pending:
+        path = record.scan_path[:28] + "..." if len(record.scan_path) > 30 else record.scan_path
+        color = state_colors.get(record.state, "white")
+        table.add_row(
+            record.signoff_id,
+            path,
+            f"{record.scan_score}/100",
+            str(record.issues_fixed),
+            f"[{color}]{record.state.value}[/]",
+            record.reviewer_name or "[dim]Unassigned[/]"
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total pending: {len(pending)}[/]")
+    console.print()
+    console.print("[dim]To approve: tibet-audit signoff approve <ID>[/]")
+    console.print("[dim]To seal:    tibet-audit signoff seal <ID>[/]")
+
+
+@signoff_app.command("show")
+def signoff_show(signoff_id: str = typer.Argument(..., help="Sign-off ID")):
+    """Show details of a specific sign-off."""
+    from .signoff import SignoffManager, create_signoff_prompt, format_sealed_certificate, SignoffState
+
+    manager = SignoffManager()
+    record = manager.get_record(signoff_id)
+
+    if not record:
+        console.print(f"[red]❌ Sign-off {signoff_id} not found[/]")
+        raise typer.Exit(1)
+
+    console.print(SIGNOFF_BANNER)
+
+    if record.state == SignoffState.JIS_SEALED:
+        console.print(format_sealed_certificate(record))
+    else:
+        console.print(create_signoff_prompt(record))
+        console.print(f"[bold]State:[/] {record.state.value}")
+        if record.reviewer_name:
+            console.print(f"[bold]Reviewer:[/] {record.reviewer_name}")
+        if record.reviewer_did:
+            console.print(f"[bold]DID:[/] {record.reviewer_did}")
+
+
+@signoff_app.command("approve")
+def signoff_approve(
+    signoff_id: str = typer.Argument(..., help="Sign-off ID"),
+    reviewer: Optional[str] = typer.Option(None, "--reviewer", "-r", help="Reviewer name"),
+    reviewer_did: Optional[str] = typer.Option(None, "--did", help="Reviewer DID"),
+    comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Review comment"),
+):
+    """Approve a compliance assessment (human verification step)."""
+    from .signoff import SignoffManager, SignoffState
+
+    console.print(SIGNOFF_BANNER)
+
+    manager = SignoffManager()
+    record = manager.get_record(signoff_id)
+
+    if not record:
+        console.print(f"[red]❌ Sign-off {signoff_id} not found[/]")
+        raise typer.Exit(1)
+
+    # Start review if reviewer info provided and not yet reviewing
+    if reviewer and record.state == SignoffState.PENDING_REVIEW:
+        record = manager.start_review(signoff_id, reviewer, reviewer_did)
+        console.print(f"[blue]→ Review started by {reviewer}[/]")
+
+    # Approve
+    try:
+        record = manager.approve(signoff_id, comment)
+        console.print(f"[green]✅ Sign-off {signoff_id} APPROVED![/]")
+        console.print()
+        console.print(f"[dim]State: {record.state.value}[/]")
+        if comment:
+            console.print(f"[dim]Comment: {comment}[/]")
+        console.print()
+        console.print("[bold]Next step:[/] Seal with JIS bilateral consent:")
+        console.print(f"  [cyan]tibet-audit signoff seal {signoff_id}[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ {e}[/]")
+        raise typer.Exit(1)
+
+
+@signoff_app.command("reject")
+def signoff_reject(
+    signoff_id: str = typer.Argument(..., help="Sign-off ID"),
+    reason: str = typer.Option(..., "--reason", "-r", help="Reason for rejection"),
+):
+    """Reject a compliance assessment."""
+    from .signoff import SignoffManager
+
+    console.print(SIGNOFF_BANNER)
+
+    manager = SignoffManager()
+
+    try:
+        record = manager.reject(signoff_id, reason)
+        console.print(f"[red]❌ Sign-off {signoff_id} REJECTED[/]")
+        console.print(f"[dim]Reason: {reason}[/]")
+        console.print()
+        console.print("[dim]The compliance assessment needs to be reviewed and re-run.[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ {e}[/]")
+        raise typer.Exit(1)
+
+
+@signoff_app.command("seal")
+def signoff_seal(signoff_id: str = typer.Argument(..., help="Sign-off ID")):
+    """Cryptographically seal an approved sign-off with JIS bilateral consent."""
+    from .signoff import SignoffManager, format_sealed_certificate, SignoffState
+
+    console.print(SIGNOFF_BANNER)
+
+    manager = SignoffManager()
+    record = manager.get_record(signoff_id)
+
+    if not record:
+        console.print(f"[red]❌ Sign-off {signoff_id} not found[/]")
+        raise typer.Exit(1)
+
+    if record.state != SignoffState.HUMAN_VERIFIED:
+        console.print(f"[red]❌ Can only seal HUMAN_VERIFIED sign-offs[/]")
+        console.print(f"[dim]Current state: {record.state.value}[/]")
+        if record.state == SignoffState.PENDING_REVIEW:
+            console.print(f"\n[dim]First approve: tibet-audit signoff approve {signoff_id}[/]")
+        raise typer.Exit(1)
+
+    try:
+        record = manager.seal_with_jis(signoff_id)
+        console.print("[bold green]🔐 JIS SEALED![/]")
+        console.print()
+        console.print(format_sealed_certificate(record))
+        console.print("[bold green]✅ Compliance assessment is now cryptographically verified.[/]")
+        console.print()
+        console.print(f"[dim]Certificate saved to: ~/.tibet-audit/signoffs/{signoff_id}_consent.json[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ {e}[/]")
+        raise typer.Exit(1)
+
+
+@signoff_app.command("stats")
+def signoff_stats():
+    """Show sign-off statistics (for tibet-pol integration)."""
+    from .signoff import SignoffManager, SignoffState
+
+    console.print(SIGNOFF_BANNER)
+
+    manager = SignoffManager()
+    counts = manager.count_by_state()
+
+    table = Table(title="Sign-off Statistics", box=box.ROUNDED)
+    table.add_column("State", width=20)
+    table.add_column("Count", justify="right", width=10)
+    table.add_column("Description", width=40)
+
+    state_info = {
+        "PENDING_REVIEW": ("yellow", "Awaiting human reviewer"),
+        "UNDER_REVIEW": ("blue", "Currently being reviewed"),
+        "HUMAN_VERIFIED": ("green", "Approved, awaiting seal"),
+        "HUMAN_REJECTED": ("red", "Rejected, needs re-assessment"),
+        "JIS_SEALED": ("bold green", "Cryptographically sealed ✓"),
+    }
+
+    total = 0
+    for state, count in counts.items():
+        total += count
+        color, desc = state_info.get(state, ("white", ""))
+        table.add_row(f"[{color}]{state}[/]", str(count), desc)
+
+    console.print(table)
+    console.print(f"\n[bold]Total sign-offs: {total}[/]")
+
+    # Calculate metrics for tibet-pol
+    sealed = counts.get("JIS_SEALED", 0)
+    pending = counts.get("PENDING_REVIEW", 0) + counts.get("UNDER_REVIEW", 0)
+    verified = counts.get("HUMAN_VERIFIED", 0)
+
+    if total > 0:
+        seal_rate = sealed / total * 100
+        console.print(f"[dim]Seal rate: {seal_rate:.1f}%[/]")
+        console.print(f"[dim]Pending review: {pending}[/]")
+        console.print(f"[dim]Awaiting seal: {verified}[/]")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

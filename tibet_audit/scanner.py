@@ -73,11 +73,21 @@ class TIBETAudit:
 
     For Lynis-style live output:
         result = audit.scan("/path/to/project", live_mode=True)
+
+    For sovereign mode (no cloud APIs):
+        audit = TIBETAudit(sovereign_mode=True)
+        result = audit.scan("/path/to/project")
     """
 
-    def __init__(self, checks: Optional[List] = None):
-        """Initialize scanner with checks."""
+    def __init__(self, checks: Optional[List] = None, sovereign_mode: bool = False):
+        """Initialize scanner with checks.
+
+        Args:
+            checks: Optional list of checks to run
+            sovereign_mode: If True, skip any checks that require cloud APIs
+        """
         self.checks = checks or ALL_CHECKS
+        self.sovereign_mode = sovereign_mode
 
     def scan(
         self,
@@ -107,6 +117,7 @@ class TIBETAudit:
         context = {
             "scan_path": scan_path,
             "tibet_available": self._check_tibet_available(),
+            "sovereign_mode": self.sovereign_mode,
         }
 
         # Get console for live mode output
