@@ -408,6 +408,87 @@ class NIS2BusinessContinuityCheck(BaseCheck):
         )
 
 
+class NIS2DigitalSovereigntyCheck(BaseCheck):
+    """Check for foreign cloud dependencies (US CLOUD Act risk).
+
+    The 'no-digid' check - named after the Dutch DigiD system
+    that was sold to American company Kyndryl.
+
+    "Hoop dat de overheid 'm gebruikt" - Jasper, 2026
+    """
+
+    check_id = "NIS2-007"
+    name = "Digital Sovereignty (no-digid)"
+    description = "Check for foreign cloud dependencies (US CLOUD Act risk)"
+    severity = Severity.HIGH
+    category = "nis2"
+    score_weight = 15
+
+    # Foreign cloud providers subject to US CLOUD Act or similar
+    FOREIGN_PROVIDERS = {
+        'AWS': ['amazonaws.com', 'aws-sdk', 'boto3', 'awscli', 's3.amazonaws'],
+        'Azure': ['azure.com', 'microsoft.com', 'azure-storage', 'blob.core.windows'],
+        'Google Cloud': ['googleapis.com', 'google-cloud', 'google-cloud-storage'],
+        'Cloudflare (US)': ['cloudflare.com', 'cloudflare-sdk'],
+        'DigitalOcean': ['digitalocean.com', 'digitaloceanspaces'],
+        'Kyndryl/IBM': ['kyndryl.com', 'ibm.com', 'softlayer'],
+    }
+
+    def run(self, context: dict) -> CheckResult:
+        scan_path = Path(context.get("scan_path", "."))
+        found_providers = []
+
+        # Check dependency files
+        dep_files = ['requirements.txt', 'pyproject.toml', 'setup.py',
+                     'package.json', 'package-lock.json', 'Cargo.toml']
+
+        for dep_file in dep_files:
+            filepath = scan_path / dep_file
+            if filepath.exists():
+                try:
+                    content = filepath.read_text().lower()
+                    for provider, patterns in self.FOREIGN_PROVIDERS.items():
+                        if any(p in content for p in patterns) and provider not in found_providers:
+                            found_providers.append(provider)
+                except Exception:
+                    pass
+
+        # Check config files (.env, config.py, etc.)
+        config_patterns = ['.env', '.env.*', 'config.py', 'settings.py',
+                          'config.json', 'config.yaml', 'config.yml']
+
+        for pattern in config_patterns:
+            for config_file in list(scan_path.glob(f"**/{pattern}"))[:20]:
+                try:
+                    content = config_file.read_text().lower()
+                    for provider, patterns in self.FOREIGN_PROVIDERS.items():
+                        if any(p in content for p in patterns) and provider not in found_providers:
+                            found_providers.append(provider)
+                except Exception:
+                    pass
+
+        if not found_providers:
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.PASSED,
+                severity=self.severity,
+                message="No foreign cloud dependencies detected - Sovereign! 🏴",
+                score_impact=0
+            )
+
+        return CheckResult(
+            check_id=self.check_id,
+            name=self.name,
+            status=Status.WARNING,
+            severity=self.severity,
+            message=f"Foreign cloud detected: {', '.join(found_providers)}",
+            recommendation="Consider EU-sovereign alternatives. US CLOUD Act allows foreign government access to data.",
+            references=["NIS2 Recital 79 (supply chain)", "Schrems II ruling", "US CLOUD Act"],
+            score_impact=self.score_weight
+        )
+
+
 # Export all checks
 NIS2_CHECKS = [
     NIS2IncidentReportingCheck(),
@@ -416,4 +497,5 @@ NIS2_CHECKS = [
     NIS2EncryptionCheck(),
     NIS2AccessControlCheck(),
     NIS2BusinessContinuityCheck(),
+    NIS2DigitalSovereigntyCheck(),
 ]
