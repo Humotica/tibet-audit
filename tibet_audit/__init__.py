@@ -17,7 +17,7 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.14.0"  # BIO2 Framework: Dutch government baseline with Grade A-F scoring
+__version__ = "0.15.0"  # DORA Framework: Financial sector resilience + TIBET = Pillar 5
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 

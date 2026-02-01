@@ -9,7 +9,37 @@
 
 **45+ checks** across **12 frameworks** covering GDPR, AI Act, NIS2, BIO2 (Dutch Gov), PIPA, APPI, PDPA, LGPD, and more.
 
-### 🏛️ NEW: BIO2 Dutch Government Framework
+### 🏦 NEW: DORA Framework (Financial Sector)
+
+**Digital Operational Resilience Act** - EU regulation for financial entities. Deadline passed: January 17, 2025.
+
+```bash
+$ tibet-audit scan --framework dora --org "ING Bank"
+
+🏦 DORA COMPLIANCE MODE
+   Digital Operational Resilience Act (v1.0.0)
+   Entity: ING Bank
+   Deadline: 2025-01-17 | Pillars: 5 | BIO2 overlap: ~60%
+   TIBET = Pillar 5 compliance (Information Sharing)
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                        DORA Compliance Report                            ║
+║                              ING Bank                                    ║
+╠══════════════════════════════════════════════════════════════════════════╣
+║  Overall Grade: B 🟢                                                     ║
+║  Score: 14/17 checks passed (82.4%)                                      ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+PILLAR 1: ICT Risk Management (6/6 = 100%) ✅
+PILLAR 2: ICT Incident Management (2/3 = 67%) ⚠️
+PILLAR 3: Resilience Testing (2/3 = 67%) ⚠️
+PILLAR 4: Third-Party Risk (3/4 = 75%) ⚠️
+PILLAR 5: Information Sharing (1/1 = 100%) ✅ TIBET detected!
+```
+
+**Key insight:** TIBET provides automatic Pillar 5 compliance through distributed threat intelligence!
+
+### 🏛️ BIO2 Dutch Government Framework
 
 **71 days until NIS2 deadline** (April 18, 2026). Dutch government organizations need BIO2 compliance NOW.
 

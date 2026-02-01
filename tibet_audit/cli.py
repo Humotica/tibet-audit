@@ -49,6 +49,17 @@ except ImportError:
     BIO2_AVAILABLE = False
 
 try:
+    from .frameworks.dora import (
+        DORA_FRAMEWORK,
+        run_dora_audit,
+        format_dora_report,
+        DORAGrade,
+    )
+    DORA_AVAILABLE = True
+except ImportError:
+    DORA_AVAILABLE = False
+
+try:
     import requests
     from packaging import version
 except ImportError:
@@ -162,6 +173,7 @@ def scan(
 
     # Framework-specific handling
     bio2_mode = False
+    dora_mode = False
     if framework:
         framework = framework.lower()
         if framework == "bio2":
@@ -175,11 +187,23 @@ def scan(
             console.print(f"[dim]   Organisatie: {org}[/]")
             console.print(f"[dim]   {BIO2_FRAMEWORK['nis2_alignment']}[/]")
             console.print()
+        elif framework == "dora":
+            if not DORA_AVAILABLE:
+                console.print("[bold red]❌ DORA framework not available[/]")
+                raise typer.Exit(1)
+            dora_mode = True
+            org = org_name or "Financial Entity"
+            console.print("[bold green]🏦 DORA COMPLIANCE MODE[/]")
+            console.print(f"[dim]   Digital Operational Resilience Act (v{DORA_FRAMEWORK['version']})[/]")
+            console.print(f"[dim]   Entity: {org}[/]")
+            console.print(f"[dim]   Deadline: {DORA_FRAMEWORK['deadline']} | Pillars: {DORA_FRAMEWORK['pillars']} | BIO2 overlap: {DORA_FRAMEWORK['bio2_overlap']}[/]")
+            console.print(f"[dim]   TIBET = Pillar 5 compliance (Information Sharing)[/]")
+            console.print()
         else:
             console.print(f"[yellow]⚠️  Framework '{framework}' - using standard scan[/]")
             console.print()
 
-    if not quiet and not bio2_mode:
+    if not quiet and not bio2_mode and not dora_mode:
         console.print(BANNER.format(version=__version__))
 
     # Parse categories
@@ -228,6 +252,14 @@ def scan(
         # Generate and display BIO2 report
         bio2_report = format_bio2_report(org, bio2_results)
         console.print(f"\n[bold]{bio2_report}[/]")
+    elif dora_mode:
+        # DORA Compliance Report - 5 Pillars with Grade A-F
+        org = org_name or "Financial Entity"
+        # Run DORA-specific audit (uses file-based checks)
+        dora_results = run_dora_audit(path)
+        # Generate and display DORA report
+        dora_report = format_dora_report(org, dora_results)
+        console.print(f"\n[bold]{dora_report}[/]")
     else:
         # Display results
         _display_results(result, quiet, verbose=cry)
