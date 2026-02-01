@@ -7,7 +7,37 @@
 
 **Compliance Health Scanner** - Like [Lynis](https://cisofy.com/lynis/), but for regulations.
 
-**45 checks** across **10 frameworks** covering GDPR, AI Act, PIPA, APPI, PDPA, LGPD, Gulf PDPL, NDPR, and more.
+**45+ checks** across **12 frameworks** covering GDPR, AI Act, NIS2, BIO2 (Dutch Gov), PIPA, APPI, PDPA, LGPD, and more.
+
+### 🏛️ NEW: BIO2 Dutch Government Framework
+
+**71 days until NIS2 deadline** (April 18, 2026). Dutch government organizations need BIO2 compliance NOW.
+
+```bash
+$ tibet-audit scan --framework bio2 --org "Gemeente Amsterdam"
+
+🏛️  BIO2 COMPLIANCE MODE
+   Baseline Informatiebeveiliging Overheid 2 (v1.2)
+   BIO2 + ISO 27001 = NIS2 zorgplicht invulling
+
+BIO2 COMPLIANCE REPORT - GEMEENTE AMSTERDAM v1.0
+==================================================
+[8.24] Cryptografie: ✅ GRADE A (Encryption enabled)
+[5.21] Leverancier: ❌ GRADE F (No sovereign-agreement)
+[8.15] Logging: ✅ GRADE A (Audit logging enabled)
+
+--------------------------------------------------
+OVERALL: ⚠️ GRADE C - Deels compliant, actie vereist
+Passed: 33/45 checks
+
+Powered by tibet-audit | https://humotica.com
+```
+
+**Why BIO2?**
+- Required for all Dutch government: Gemeenten, Provincies, Waterschappen, Rijksoverheid
+- Direct NIS2 alignment (BIO2 + ISO 27001 = NIS2 compliance)
+- Grade A-F scoring with visual feedback
+- 17 automated checks mapped to ISO 27002:2022
 
 Get a compliance health score in seconds:
 
