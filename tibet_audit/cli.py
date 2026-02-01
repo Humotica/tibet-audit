@@ -36,6 +36,18 @@ from .runtime import RuntimeAudit
 from .mercury import build_report, generate_roadmap, generate_upgrades, diff_reports, high_five
 from . import __version__
 
+# Framework imports
+try:
+    from .frameworks.bio2 import (
+        BIO2_FRAMEWORK,
+        get_automated_bio2_checks,
+        format_bio2_report,
+        BIO2Grade,
+    )
+    BIO2_AVAILABLE = True
+except ImportError:
+    BIO2_AVAILABLE = False
+
 try:
     import requests
     from packaging import version
@@ -108,6 +120,8 @@ CALL_MAMA_BANNER = """
 def scan(
     path: str = typer.Argument(".", help="Path to scan"),
     categories: Optional[str] = typer.Option(None, "--categories", "-c", help="Categories: gdpr,ai_act,jis,sovereignty,provider"),
+    framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: bio2, nis2, gdpr, ai_act, dora"),
+    org_name: Optional[str] = typer.Option(None, "--org", help="Organization name for compliance report"),
     output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Minimal output"),
     cry: bool = typer.Option(False, "--cry", help="Verbose mode - for when things are really bad"),
@@ -122,6 +136,7 @@ def scan(
         tibet-audit scan
         tibet-audit scan ./my-project
         tibet-audit scan --categories gdpr,ai_act
+        tibet-audit scan --framework bio2 --org "Gemeente Amsterdam"
         tibet-audit scan --cry              # When you need ALL the details
         tibet-audit scan --sovereign        # 🏴 No cloud, fully local
     """
@@ -145,7 +160,26 @@ def scan(
         console.print("[dim]   \"When everything is on fire, you need all the details.\"[/]")
         console.print()
 
-    if not quiet:
+    # Framework-specific handling
+    bio2_mode = False
+    if framework:
+        framework = framework.lower()
+        if framework == "bio2":
+            if not BIO2_AVAILABLE:
+                console.print("[bold red]❌ BIO2 framework not available[/]")
+                raise typer.Exit(1)
+            bio2_mode = True
+            org = org_name or "Organisatie"
+            console.print("[bold orange3]🏛️  BIO2 COMPLIANCE MODE[/]")
+            console.print(f"[dim]   Baseline Informatiebeveiliging Overheid 2 (v{BIO2_FRAMEWORK['version']})[/]")
+            console.print(f"[dim]   Organisatie: {org}[/]")
+            console.print(f"[dim]   {BIO2_FRAMEWORK['nis2_alignment']}[/]")
+            console.print()
+        else:
+            console.print(f"[yellow]⚠️  Framework '{framework}' - using standard scan[/]")
+            console.print()
+
+    if not quiet and not bio2_mode:
         console.print(BANNER.format(version=__version__))
 
     # Parse categories
@@ -173,6 +207,27 @@ def scan(
     if machine_output:
         report = build_report(result, profile=profile)
         console.print(json.dumps(report, indent=2))
+    elif bio2_mode:
+        # BIO2 Compliance Report - Grade A-F format
+        org = org_name or "Organisatie"
+        bio2_results = []
+        for check_result in result.results:
+            # Map tibet-audit results to BIO2 format
+            # Status can be Status.PASSED, Status.WARNING, Status.FAILED, etc.
+            status_str = str(check_result.status.value if hasattr(check_result.status, 'value') else check_result.status).upper()
+            is_pass = status_str in ("PASS", "PASSED", "OK", "SUCCESS")
+
+            bio2_results.append({
+                "check_id": f"BIO2-{check_result.check_id}" if not check_result.check_id.startswith("BIO2") else check_result.check_id,
+                "name": check_result.name,
+                "status": "pass" if is_pass else "fail",
+                "severity": check_result.severity.value if hasattr(check_result.severity, 'value') else str(check_result.severity),
+                "message": check_result.message or check_result.name,
+            })
+
+        # Generate and display BIO2 report
+        bio2_report = format_bio2_report(org, bio2_results)
+        console.print(f"\n[bold]{bio2_report}[/]")
     else:
         # Display results
         _display_results(result, quiet, verbose=cry)
