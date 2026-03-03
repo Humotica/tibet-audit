@@ -58,7 +58,7 @@ class SignoffRecord:
 
     # ERACHTER - Intent
     reviewer_name: Optional[str] = None
-    reviewer_did: Optional[str] = None  # did:jis:reviewer:xxx
+    reviewer_did: Optional[str] = None  # jis:reviewer:xxx
     review_comment: Optional[str] = None
 
     # JIS Seal
@@ -89,7 +89,7 @@ class SignoffManager:
     Manages the sign-off workflow for tibet-audit.
 
     The Diaper Protocol addendum:
-    "AI verschoont de luier, jurist checkt of de baby lacht, JIS plakt de sticker 'goedgekeurd'."
+    "AI changes the diaper, the reviewer checks if the baby smiles, JIS stamps 'approved'."
     """
 
     def __init__(self, storage_path: Optional[str] = None):
@@ -144,7 +144,7 @@ class SignoffManager:
         Args:
             signoff_id: The sign-off ID
             reviewer_name: Name of the reviewer (e.g., "Eva de Vries, Jurist")
-            reviewer_did: Optional DID of reviewer (e.g., "did:jis:jurist:eva.devries")
+            reviewer_did: Optional DID of reviewer (e.g., "jis:jurist:eva.devries")
         """
         record = self._load_record(signoff_id)
         if not record:
@@ -218,7 +218,7 @@ class SignoffManager:
 
         # Create JIS consent structure
         consent = {
-            "protocol": "did:jis",
+            "protocol": "jis:",
             "version": "1.0",
             "parties": [
                 {

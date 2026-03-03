@@ -229,6 +229,22 @@ class TIBETAudit:
                 rec = result.recommendation[:55] if len(result.recommendation) > 55 else result.recommendation
                 console.print(f"    [green]→ {rec}[/]")
 
+        # Show TIBET recommendation for failed/warning checks
+        if result.status in (Status.FAILED, Status.WARNING):
+            self._print_tibet_recommendation(console, result)
+
+    def _print_tibet_recommendation(self, console, result: CheckResult):
+        """Print TIBET stack recommendation for a failed check."""
+        try:
+            from .tibet_recommendations import get_recommendation
+            rec = get_recommendation(result.check_id, getattr(result, "category", ""))
+            if rec:
+                pkgs = ", ".join(rec.get("packages", []))
+                console.print(f"    [cyan]TIBET: {rec.get('title', '')}[/]")
+                console.print(f"    [dim cyan]{rec.get('install', '')}[/]")
+        except Exception:
+            pass  # tibet_recommendations not available
+
     def _calculate_score(self, results: List[CheckResult]) -> tuple:
         """Calculate compliance score from results."""
         max_score = 100

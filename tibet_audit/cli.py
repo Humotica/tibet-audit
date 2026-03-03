@@ -76,7 +76,7 @@ def check_for_updates():
         if response.status_code == 200:
             latest_version = response.json()["info"]["version"]
             if version.parse(latest_version) > version.parse(__version__):
-                console.print(f"\n[bold yellow][💡] Update beschikbaar: tibet-audit {latest_version}[/] [dim](huidig: {__version__})[/]")
+                console.print(f"\n[bold yellow][💡] Update available: tibet-audit {latest_version}[/] [dim](current: {__version__})[/]")
                 console.print(f"    [blue]pip install --upgrade tibet-audit[/]\n")
     except Exception:
         pass # Silent fail to respect the user's focus
@@ -181,7 +181,7 @@ def scan(
                 console.print("[bold red]❌ BIO2 framework not available[/]")
                 raise typer.Exit(1)
             bio2_mode = True
-            org = org_name or "Organisatie"
+            org = org_name or "Organization"
             console.print("[bold orange3]🏛️  BIO2 COMPLIANCE MODE[/]")
             console.print(f"[dim]   Baseline Informatiebeveiliging Overheid 2 (v{BIO2_FRAMEWORK['version']})[/]")
             console.print(f"[dim]   Organisatie: {org}[/]")
@@ -230,10 +230,11 @@ def scan(
 
     if machine_output:
         report = build_report(result, profile=profile)
-        console.print(json.dumps(report, indent=2))
+        # Use print() instead of console.print() to avoid Rich markup/ANSI in JSON
+        print(json.dumps(report, indent=2, ensure_ascii=False))
     elif bio2_mode:
         # BIO2 Compliance Report - Grade A-F format
-        org = org_name or "Organisatie"
+        org = org_name or "Organization"
         bio2_results = []
         for check_result in result.results:
             # Map tibet-audit results to BIO2 format
@@ -301,7 +302,7 @@ def fix(
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Same as --wet-wipe"),
     require_signoff: bool = typer.Option(False, "--require-signoff", "-s", help="⚖️ Require human sign-off before RESOLVED state"),
     reviewer: Optional[str] = typer.Option(None, "--reviewer", "-r", help="Reviewer name for sign-off (e.g., 'Eva de Vries, Jurist')"),
-    reviewer_did: Optional[str] = typer.Option(None, "--reviewer-did", help="Reviewer DID (e.g., 'did:jis:jurist:eva.devries')"),
+    reviewer_did: Optional[str] = typer.Option(None, "--reviewer-did", help="Reviewer DID (e.g., 'jis:jurist:eva.devries')"),
     sovereign: bool = typer.Option(False, "--sovereign", help="🏴 Sovereign mode: no cloud APIs, fully local"),
 ):
     """
@@ -391,21 +392,52 @@ def fix(
 def _apply_fixes(issues: List) -> int:
     """Apply fixes for issues. Returns count of successful fixes."""
     import subprocess
+    import shlex
 
     fixed = 0
     failed = 0
 
     for issue in issues:
-        if not issue.fix_action or not issue.fix_action.command:
+        if not issue.fix_action:
             continue
 
         console.print(f"[bold]Fixing {issue.check_id}...[/]")
 
         try:
-            # For now, just show what would be done
-            # In production, you'd actually run the commands
-            console.print(f"  [green]✅[/] Would run: {issue.fix_action.command}")
-            fixed += 1
+            # Execute the fix action
+            if issue.fix_action.function:
+                # Python function fix
+                issue.fix_action.function()
+                console.print(f"  [green]✅[/] Fixed: {issue.fix_action.description}")
+                fixed += 1
+            elif issue.fix_action.command:
+                cmd = issue.fix_action.command
+                console.print(f"  [dim]Running: {cmd}[/]")
+
+                # Detect template generation commands (file writes)
+                if cmd.startswith("mkdir ") or cmd.startswith("cat >") or cmd.startswith("cat <<"):
+                    # Shell command (needs shell=True for redirects)
+                    proc = subprocess.run(
+                        cmd, shell=True, capture_output=True, text=True, timeout=60
+                    )
+                else:
+                    # Standard command (safer without shell)
+                    proc = subprocess.run(
+                        shlex.split(cmd), capture_output=True, text=True, timeout=60
+                    )
+
+                if proc.returncode == 0:
+                    console.print(f"  [green]✅[/] Fixed: {issue.fix_action.description}")
+                    fixed += 1
+                else:
+                    err = proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+                    console.print(f"  [red]❌[/] Failed: {err}")
+                    failed += 1
+            else:
+                console.print(f"  [yellow]⚠️[/]  No command or function available for this fix")
+        except subprocess.TimeoutExpired:
+            console.print(f"  [red]❌[/] Failed: command timed out (60s)")
+            failed += 1
         except Exception as e:
             console.print(f"  [red]❌[/] Failed: {e}")
             failed += 1
@@ -506,6 +538,8 @@ def call_mama(
     webhook: Optional[str] = typer.Option(None, "--webhook", "-w", help="POST report to webhook URL"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Save report to file"),
     send: bool = typer.Option(False, "--send", "-s", help=f"Actually send to {MAMA_DEFAULT_EMAIL}"),
+    contact: Optional[str] = typer.Option(None, "--contact", "-c", help="Your email for follow-up support"),
+    company: Optional[str] = typer.Option(None, "--company", help="Your company name (optional)"),
 ):
     """
     📞 Call M.A.M.A. - Mission Assurance & Monitoring Agent
@@ -519,8 +553,8 @@ def call_mama(
 
     Examples:
         tibet-audit call-mama --send              # Send to M.A.M.A. HQ
-        tibet-audit call-mama --email me@co.com   # Custom email
-        tibet-audit call-mama --webhook https://slack.webhook.url
+        tibet-audit call-mama --send --contact me@company.com  # With follow-up email
+        tibet-audit call-mama --send --contact me@co.com --company "Acme Inc"
         tibet-audit call-mama --output report.json
     """
     console.print(CALL_MAMA_BANNER)
@@ -567,7 +601,9 @@ def call_mama(
             for r in result.results if r.status != Status.PASSED
         ],
         "help_requested": True,
-        "mama_message": "Help! The compliance diaper needs changing! 🍼"
+        "mama_message": "Help! The compliance diaper needs changing! 🍼",
+        "contact_email": contact,
+        "company": company,
     }
 
     report_json = json.dumps(report, indent=2)
@@ -784,7 +820,7 @@ def _display_tibet_token(token: dict):
     console.print("[bold blue]╠══════════════════════════════════════════════════════════════════╣[/]")
 
     # ERIN
-    console.print("[bold blue]║[/] [bold green]ERIN[/] (Wat zit erin?)                                           [bold blue]║[/]")
+    console.print("[bold blue]║[/] [bold green]ERIN[/] (What's in it?)                                           [bold blue]║[/]")
     if isinstance(erin, dict):
         for k, v in list(erin.items())[:5]:
             line = f"   {k}: {v}"[:60]
@@ -796,7 +832,7 @@ def _display_tibet_token(token: dict):
     console.print("[bold blue]╠══════════════════════════════════════════════════════════════════╣[/]")
 
     # ERAAN
-    console.print("[bold blue]║[/] [bold yellow]ERAAN[/] (Wat hangt eraan?)                                        [bold blue]║[/]")
+    console.print("[bold blue]║[/] [bold yellow]ERAAN[/] (What's attached?)                                        [bold blue]║[/]")
     if isinstance(eraan, list):
         for item in eraan[:5]:
             line = f"→ {item}"[:60]
@@ -820,7 +856,7 @@ def _display_tibet_token(token: dict):
     console.print("[bold blue]╠══════════════════════════════════════════════════════════════════╣[/]")
 
     # ERACHTER
-    console.print("[bold blue]║[/] [bold magenta]ERACHTER[/] (Intent/Waarom?)                                       [bold blue]║[/]")
+    console.print("[bold blue]║[/] [bold magenta]ERACHTER[/] (Intent/Why?)                                           [bold blue]║[/]")
     if erachter:
         # Word wrap long intents
         words = str(erachter).split()
@@ -1785,6 +1821,161 @@ def signoff_stats():
         console.print(f"[dim]Seal rate: {seal_rate:.1f}%[/]")
         console.print(f"[dim]Pending review: {pending}[/]")
         console.print(f"[dim]Awaiting seal: {verified}[/]")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATUS DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.command("status")
+def status_dashboard(
+    path: str = typer.Argument(".", help="Path to scan"),
+    output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+):
+    """
+    TIBET Status Dashboard — One-glance compliance overview.
+
+    Shows:
+    - Installed TIBET packages and versions
+    - Quick compliance scan score
+    - TIBET recommendations for gaps
+    - Aggregate trust and security posture
+
+    Examples:
+        tibet-audit status
+        tibet-audit status /path/to/project
+        tibet-audit status --output json
+    """
+    import time
+
+    if output.lower() != "json":
+        console.print()
+        console.print("[bold cyan]TIBET STATUS DASHBOARD[/]")
+        console.print("[cyan]" + "=" * 50 + "[/]")
+        console.print()
+
+    # 1. Detect installed packages
+    installed = _detect_installed_packages()
+    compliance_pct, tier = _calculate_compliance(installed)
+
+    # Key package categories
+    has_core = any(p in installed for p in ["tibet-core", "tibet-vault"])
+    has_security = any(p in installed for p in ["tibet-claw", "inject-bender", "tibet-pol"])
+    has_audit = "tibet-audit" in installed
+    has_identity = any(p in installed for p in ["jis-core", "idd-cli"])
+    has_local_ai = any(p in installed for p in ["oomllama", "sensory"])
+
+    # 2. Run quick scan
+    start = time.time()
+    audit = TIBETAudit()
+    scan_result = audit.scan(str(path))
+    scan_duration = round(time.time() - start, 2)
+
+    # 3. Get TIBET recommendations
+    from .tibet_recommendations import enrich_results, format_recommendations_summary
+    enrich_results(scan_result.results)
+    rec_summary = format_recommendations_summary(scan_result.results)
+
+    # 4. Count threat-relevant checks
+    failed_critical = sum(
+        1 for r in scan_result.results
+        if r.status == Status.FAILED and r.severity in (Severity.CRITICAL, Severity.HIGH)
+    )
+
+    if output.lower() == "json":
+        import json as json_mod
+        result = {
+            "dashboard": {
+                "score": scan_result.score,
+                "grade": scan_result.grade,
+                "tier": tier,
+                "compliance_pct": compliance_pct,
+            },
+            "packages": {
+                "installed_count": len(installed),
+                "installed": {k: v.get("version", "?") for k, v in installed.items()},
+                "coverage": {
+                    "core_provenance": has_core,
+                    "security": has_security,
+                    "audit": has_audit,
+                    "identity": has_identity,
+                    "local_ai": has_local_ai,
+                },
+            },
+            "scan": {
+                "passed": scan_result.passed,
+                "warnings": scan_result.warnings,
+                "failed": scan_result.failed,
+                "critical_failures": failed_critical,
+                "fixable": scan_result.fixable_count,
+                "duration_seconds": scan_duration,
+            },
+            "recommendations": [
+                {
+                    "check_id": r.check_id,
+                    "name": r.name,
+                    "tibet_packages": getattr(r, "tibet_recommendation", {}).get("packages", [])
+                    if getattr(r, "tibet_recommendation", None) else [],
+                }
+                for r in scan_result.results
+                if r.status == Status.FAILED and getattr(r, "tibet_recommendation", None)
+            ],
+        }
+        console.print(json_mod.dumps(result, indent=2))
+        return
+
+    # Terminal output
+    score_color = "green" if scan_result.score >= 80 else "yellow" if scan_result.score >= 60 else "red"
+
+    # Score + Grade
+    console.print(f"  Score:   [{score_color}]{scan_result.score}/100[/] (Grade {scan_result.grade})")
+    console.print(f"  Tier:    [bold]{tier.upper()}[/] ({len(installed)} packages, {compliance_pct}% coverage)")
+    console.print()
+
+    # Checks summary
+    console.print(f"  [green]Passed[/]:     {scan_result.passed}")
+    console.print(f"  [yellow]Warnings[/]:   {scan_result.warnings}")
+    console.print(f"  [red]Failed[/]:     {scan_result.failed}", end="")
+    if failed_critical > 0:
+        console.print(f"  [bold red]({failed_critical} critical/high)[/]")
+    else:
+        console.print()
+    if scan_result.fixable_count > 0:
+        console.print(f"  [cyan]Auto-fixable[/]: {scan_result.fixable_count}")
+    console.print()
+
+    # Stack coverage
+    console.print("[bold]TIBET Stack Coverage:[/]")
+    console.print(f"  {'[green]OK[/]' if has_core else '[red]MISSING[/]'}  Core Provenance (tibet-core, tibet-vault)")
+    console.print(f"  {'[green]OK[/]' if has_security else '[red]MISSING[/]'}  Security (tibet-claw, inject-bender)")
+    console.print(f"  {'[green]OK[/]' if has_audit else '[red]MISSING[/]'}  Compliance (tibet-audit)")
+    console.print(f"  {'[green]OK[/]' if has_identity else '[red]MISSING[/]'}  Identity (jis-core, idd-cli)")
+    console.print(f"  {'[green]OK[/]' if has_local_ai else '[dim]N/A[/]'}  Local AI (oomllama, sensory)")
+    console.print()
+
+    # Top 3 failed checks with TIBET recommendations
+    failed = [r for r in scan_result.results if r.status == Status.FAILED]
+    if failed:
+        console.print("[bold]Top Issues + TIBET Fix:[/]")
+        for r in failed[:5]:
+            rec = getattr(r, "tibet_recommendation", None)
+            console.print(f"  [red]x[/] {r.check_id}: {r.name}")
+            if rec:
+                console.print(f"    [cyan]-> {rec.get('install', '')}[/]")
+        console.print()
+
+    # Quick install suggestion
+    if not has_core or not has_security:
+        missing_pkgs = []
+        if not has_core:
+            missing_pkgs.extend(["tibet-core"])
+        if not has_security:
+            missing_pkgs.extend(["tibet-claw", "inject-bender"])
+        console.print(f"[bold]Quick upgrade:[/] pip install {' '.join(missing_pkgs)}")
+        console.print()
+
+    console.print(f"[dim]Scanned {path} in {scan_duration}s | tibet-audit {__version__}[/]")
+    console.print()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

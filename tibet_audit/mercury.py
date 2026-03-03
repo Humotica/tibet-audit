@@ -13,8 +13,19 @@ from .checks.base import Status, Severity, CheckResult
 from . import __version__
 
 
-def build_report(result, profile: Optional[str] = None) -> Dict[str, Any]:
-    """Build a structured report dict from ScanResult."""
+def build_report(result, profile: Optional[str] = None, include_tibet: bool = True) -> Dict[str, Any]:
+    """Build a structured report dict from ScanResult.
+
+    Args:
+        result: ScanResult from scanner
+        profile: Optional scan profile name
+        include_tibet: Include TIBET stack recommendations for failed checks
+    """
+    # Enrich results with TIBET recommendations if requested
+    if include_tibet:
+        from .tibet_recommendations import enrich_results
+        enrich_results(result.results)
+
     return {
         "meta": {
             "tool_version": __version__,
@@ -141,7 +152,7 @@ def high_five(server_url: Optional[str] = None) -> Dict[str, Any]:
 
 
 def _result_dict(r: CheckResult) -> Dict[str, Any]:
-    return {
+    d = {
         "check_id": r.check_id,
         "name": r.name,
         "status": r.status.value,
@@ -153,6 +164,18 @@ def _result_dict(r: CheckResult) -> Dict[str, Any]:
         "category": getattr(r, "category", None),
         "fix_action": _fix_dict(r.fix_action) if r.fix_action else None,
     }
+    # Include TIBET recommendation if enriched
+    tibet_rec = getattr(r, "tibet_recommendation", None)
+    if tibet_rec:
+        d["tibet_recommendation"] = {
+            "title": tibet_rec.get("title"),
+            "packages": tibet_rec.get("packages", []),
+            "install": tibet_rec.get("install"),
+            "description": tibet_rec.get("description"),
+            "snippet": tibet_rec.get("snippet"),
+            "references": tibet_rec.get("references", []),
+        }
+    return d
 
 
 def _fix_dict(fix) -> Dict[str, Any]:

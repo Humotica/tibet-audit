@@ -17,11 +17,15 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.15.0"  # DORA Framework: Financial sector resilience + TIBET = Pillar 5
+__version__ = "0.16.2"  # Fix command execution, JSON output, English-first
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 
 from .scanner import TIBETAudit
 from .checks.base import CheckResult, Status, Severity
+from .tibet_recommendations import get_recommendation, enrich_results, format_recommendations_summary
 
-__all__ = ["TIBETAudit", "CheckResult", "Status", "Severity"]
+__all__ = [
+    "TIBETAudit", "CheckResult", "Status", "Severity",
+    "get_recommendation", "enrich_results", "format_recommendations_summary",
+]

@@ -1,8 +1,8 @@
 """
 TIBET Audit - Runtime Verification & Semantic Reporting
 =======================================================
-Dit is de 'Kinetic' laag van TIBET Audit.
-Het koppelt statische checks aan runtime identiteit en intentie.
+The 'Kinetic' layer of TIBET Audit.
+Links static checks to runtime identity and intent.
 """
 
 import json
@@ -19,7 +19,7 @@ except ImportError:
 
 @dataclass
 class AuditContext:
-    """Wie, Waar en Waarom van de audit."""
+    """Who, Where and Why of the audit."""
     user_id: str          # JIS Identity
     environment: str      # prod, dev, sandbox
     intent: str           # routine_scan, emergency_fix, ci_cd
@@ -27,8 +27,8 @@ class AuditContext:
 
 class RuntimeAudit:
     """
-    De actieve bewaker.
-    Zet statische scan-resultaten om in een geverifieerd verhaal.
+    The active guardian.
+    Converts static scan results into a verified narrative.
     """
 
     def __init__(self, user_id: str = "unknown", intent: str = "manual_scan"):
@@ -41,54 +41,54 @@ class RuntimeAudit:
 
     def semantify(self, scan_result: Dict[str, Any]) -> str:
         """
-        Vertaalt ruwe data naar een menselijk verhaal.
+        Translate raw data into a human-readable narrative.
         """
         score = scan_result.get("score", 0)
         failed = scan_result.get("failed", 0)
-        
-        # De Narrative Engine
-        story = [f"Audit uitgevoerd door {self.context.user_id} in {self.context.environment}."]
-        
-        if score >= 90:
-            story.append(f"🟢 Uitstekend! Score {score}/100. Het systeem is compliant.")
-        elif score >= 70:
-            story.append(f"🟠 Redelijk (Score {score}). Er zijn {failed} punten die aandacht vereisen.")
-        else:
-            story.append(f"🔴 Kritiek (Score {score}). De veiligheid is in het geding. Start Diaper Protocol!")
 
-        # Semantic Deep Dive (voorbeeld)
+        # The Narrative Engine
+        story = [f"Audit performed by {self.context.user_id} in {self.context.environment}."]
+
+        if score >= 90:
+            story.append(f"🟢 Excellent! Score {score}/100. The system is compliant.")
+        elif score >= 70:
+            story.append(f"🟠 Moderate (Score {score}). There are {failed} items that require attention.")
+        else:
+            story.append(f"🔴 Critical (Score {score}). Security is at risk. Start Diaper Protocol!")
+
+        # Semantic Deep Dive
         if "AI Act" in str(scan_result):
-            story.append("   - AI Act: Audit trail voor beslissingen ontbreekt.")
-            
+            story.append("   - AI Act: Decision audit trail is missing.")
+
         return "\n".join(story)
 
     def secure_log(self, scan_result: Dict[str, Any]) -> str:
         """
-        Bereidt het TIBET-token voor (cryptografisch bewijs).
-        Gebruikt Rust-powered signing indien beschikbaar.
+        Prepare the TIBET token (cryptographic evidence).
+        Uses Rust-powered signing if available.
         """
-        # Canonicalize payload voor deterministic signing
+        # Canonicalize payload for deterministic signing
         payload = {
             "meta": asdict(self.context),
             "score": scan_result.get("score"),
             "failed_count": scan_result.get("failed", 0)
         }
         canonical_json = json.dumps(payload, sort_keys=True, separators=( ",", ":"))
-        
-        # Haal secret op (TIBET_SECRET)
+
+        # Get secret (TIBET_SECRET)
         secret = os.getenv("TIBET_SECRET", "dev-secret-do-not-use-in-prod")
 
         if tibet_rs:
-            # Rust-powered snelheid & veiligheid 🦀
+            # Rust-powered speed & safety 🦀
             signature = tibet_rs.tibet_sign(canonical_json, secret)
             method = "tibet-rs-hmac-sha256"
         else:
-            # Python fallback (trager) 🐍
+            # Python fallback (slower) 🐍
             signature = hashlib.sha256(f"{canonical_json}{secret}".encode()).hexdigest()
             method = "python-fallback-sha256"
 
         return f"TIBET_V1.{method}.{signature}.{self.context.user_id}"
 
-# Voorbeeldgebruik:
+# Example usage:
 # auditor = RuntimeAudit(user_id="user_1", intent="optimization")
 # print(auditor.semantify({"score": 73, "failed": 3}))
