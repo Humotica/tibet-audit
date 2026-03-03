@@ -17,7 +17,7 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.16.2"  # Fix command execution, JSON output, English-first
+__version__ = "0.17.0"  # Template engine + fix command actually fixes things
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 

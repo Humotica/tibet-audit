@@ -295,6 +295,41 @@ def scan(
 
 
 @app.command()
+def template(
+    name: str = typer.Argument(None, help="Template name (e.g., privacy-policy, breach-procedure)"),
+    list_all: bool = typer.Option(False, "--list", "-l", help="List all available templates"),
+):
+    """
+    Generate compliance document templates.
+
+    Examples:
+        tibet-audit template --list
+        tibet-audit template privacy-policy
+        tibet-audit template privacy-policy > docs/privacy-policy.md
+        tibet-audit template breach-procedure > docs/breach-procedure.md
+    """
+    from .templates import get_template, list_templates
+
+    if list_all or name is None:
+        templates = list_templates()
+        console.print("[bold]Available templates:[/]\n")
+        for t in templates:
+            console.print(f"  [cyan]{t['name']:<25}[/] {t['title']}")
+        console.print(f"\n[dim]Usage: tibet-audit template <name>[/]")
+        console.print(f"[dim]  Pipe to file: tibet-audit template <name> > docs/<filename>.md[/]")
+        return
+
+    tmpl = get_template(name)
+    if not tmpl:
+        console.print(f"[red]Unknown template: {name}[/]")
+        console.print("[dim]Run 'tibet-audit template --list' to see available templates.[/]")
+        raise typer.Exit(1)
+
+    # Output raw content (no Rich markup) so it can be piped to a file
+    print(tmpl["content"])
+
+
+@app.command()
 def fix(
     path: str = typer.Argument(".", help="Path to scan and fix"),
     auto: bool = typer.Option(False, "--auto", "-a", help="🍼 Diaper Protocol: fix everything, no questions"),
@@ -393,6 +428,9 @@ def _apply_fixes(issues: List) -> int:
     """Apply fixes for issues. Returns count of successful fixes."""
     import subprocess
     import shlex
+    import re
+    from pathlib import Path
+    from .templates import get_template
 
     fixed = 0
     failed = 0
@@ -412,16 +450,34 @@ def _apply_fixes(issues: List) -> int:
                 fixed += 1
             elif issue.fix_action.command:
                 cmd = issue.fix_action.command
+
+                # Handle "tibet-audit template X > path/file.md" internally
+                tmpl_match = re.match(
+                    r'tibet-audit template (\S+)\s*>\s*(.+)', cmd
+                )
+                if tmpl_match:
+                    tmpl_name = tmpl_match.group(1)
+                    out_path = Path(tmpl_match.group(2).strip())
+                    tmpl = get_template(tmpl_name)
+                    if tmpl:
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        out_path.write_text(tmpl["content"])
+                        console.print(f"  [green]✅[/] Created: {out_path}")
+                        fixed += 1
+                    else:
+                        console.print(f"  [red]❌[/] Unknown template: {tmpl_name}")
+                        failed += 1
+                    continue
+
+                # Handle other commands via subprocess
                 console.print(f"  [dim]Running: {cmd}[/]")
 
-                # Detect template generation commands (file writes)
-                if cmd.startswith("mkdir ") or cmd.startswith("cat >") or cmd.startswith("cat <<"):
-                    # Shell command (needs shell=True for redirects)
+                # Shell commands (redirects, pipes)
+                if any(c in cmd for c in ['>', '|', '&&', ';']):
                     proc = subprocess.run(
                         cmd, shell=True, capture_output=True, text=True, timeout=60
                     )
                 else:
-                    # Standard command (safer without shell)
                     proc = subprocess.run(
                         shlex.split(cmd), capture_output=True, text=True, timeout=60
                     )
