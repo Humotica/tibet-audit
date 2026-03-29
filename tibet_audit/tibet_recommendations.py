@@ -140,7 +140,67 @@ tibet-sbom generate --format spdx --output sbom.spdx.json
         "references": ["NIS2 Art. 21(2)(d) (Supply chain security)"],
     },
 
-    # --- JIS ---
+    # --- TIBET (IETF Draft) ---
+    "TIBET-001": {
+        "title": "TIBET Token Structure (4-field provenance)",
+        "packages": ["tibet-core"],
+        "install": "pip install tibet-core",
+        "description": (
+            "TIBET tokens require four fields: ERIN (what happened), "
+            "ERAAN (dependencies), EROMHEEN (context), ERACHTER (intent). "
+            "See IETF draft-vandemeent-tibet-provenance-01."
+        ),
+        "snippet": """\
+from tibet_core import create_token
+
+token = create_token(
+    type="action",
+    erin={"action": "deploy", "version": "2.1.0"},
+    eraan=["config.yaml", "deploy.sh"],
+    eromheen={"env": "production", "cluster": "eu-west"},
+    erachter="Scheduled release deployment",
+    actor="jis:agent:deployer"
+)
+""",
+        "references": ["IETF draft-vandemeent-tibet-provenance-01 §3"],
+    },
+    "TIBET-002": {
+        "title": "TIBET Token Chain (linked provenance)",
+        "packages": ["tibet-core"],
+        "install": "pip install tibet-core",
+        "description": (
+            "TIBET tokens must be chained via parent_id for audit trails. "
+            "Each new action references its predecessor."
+        ),
+        "snippet": """\
+child = create_token(
+    type="action",
+    erin=result_data,
+    erachter="Follow-up to deployment",
+    actor="jis:agent:verifier",
+    parent_id=parent_token.id  # Chain to parent
+)
+""",
+        "references": ["IETF draft-vandemeent-tibet-provenance-01 §3.5"],
+    },
+    "TIBET-003": {
+        "title": "TIBET Cryptographic Verification",
+        "packages": ["tibet-core"],
+        "install": "pip install tibet-core",
+        "description": (
+            "TIBET requires HMAC-SHA256 verification on tokens "
+            "to prevent tampering."
+        ),
+        "snippet": """\
+from tibet_core import verify_token
+
+is_valid = verify_token(token_id, hmac_key=secret)
+# Returns True if token hash matches
+""",
+        "references": ["IETF draft-vandemeent-tibet-provenance-01 §4"],
+    },
+
+    # --- JIS (IETF Draft) ---
     "JIS-001": {
         "title": "Intent-Based Identity with jis-core",
         "packages": ["jis-core"],
@@ -159,7 +219,133 @@ identity = JISIdentity.create(
     context={"scope": "read_only"}
 )
 """,
-        "references": ["W3C Verifiable Credentials", "IETF draft-vandemeent-tibet-provenance"],
+        "references": ["IETF draft-vandemeent-jis-identity-01 §3"],
+    },
+    "JIS-004": {
+        "title": "JIS Bilateral Consent (handshake)",
+        "packages": ["jis-core"],
+        "install": "pip install jis-core",
+        "description": (
+            "JIS requires bilateral consent: both parties must agree "
+            "before data exchange. Creates a SHA-256 consent hash."
+        ),
+        "snippet": """\
+from jis_core import JISHandshake
+
+handshake = JISHandshake.initiate(
+    from_identity="jis:agent:alice",
+    to_identity="jis:agent:bob",
+    intent="data_share"
+)
+# Bob must accept before communication proceeds
+""",
+        "references": ["IETF draft-vandemeent-jis-identity-01 §3.2"],
+    },
+
+    # --- UPIP (IETF Draft) ---
+    "UPIP-001": {
+        "title": "UPIP 5-Layer Process Integrity",
+        "packages": ["tibet-core"],
+        "install": "pip install tibet-core",
+        "description": (
+            "UPIP defines 5 integrity layers: L1 STATE (git/VCS), "
+            "L2 DEPS (lock files/SBOM), L3 PROCESS (build), "
+            "L4 RESULT (output), L5 VERIFY (signatures). "
+            "See IETF draft-vandemeent-upip-process-integrity-01."
+        ),
+        "snippet": """\
+# Export a UPIP bundle capturing all 5 layers:
+tibet-triage upip-export --command "make build" --actor jis:agent:ci
+
+# Produces process.upip.json with:
+# L1: git commit + file manifest
+# L2: pip freeze + system packages
+# L3: command + intent + actor
+# L4: exit code + stdout + diff
+# L5: machine ID + timestamp + proof
+""",
+        "references": ["IETF draft-vandemeent-upip-process-integrity-01 §3"],
+    },
+    "UPIP-002": {
+        "title": "Dependency Manifest (UPIP L2 DEPS)",
+        "packages": ["tibet-sbom"],
+        "install": "pip install tibet-sbom",
+        "description": (
+            "UPIP L2 requires pinned dependency manifests for reproducibility. "
+            "Use lock files or SBOM generation."
+        ),
+        "snippet": """\
+# Generate SBOM
+tibet-sbom generate --format cyclonedx --output sbom.json
+
+# Or ensure lock file exists
+pip freeze > requirements.txt
+""",
+        "references": ["IETF draft-vandemeent-upip-process-integrity-01 §3.2"],
+    },
+
+    # --- RVP (IETF Draft) ---
+    "RVP-001": {
+        "title": "RVP Trust Levels (L0-L3)",
+        "packages": ["tibet-core", "jis-core"],
+        "install": "pip install tibet-core jis-core",
+        "description": (
+            "RVP defines graduated trust: L0 TOKEN, L1 DEVICE, "
+            "L2 BIOMETRIC, L3 PHYSICAL. Each level requires "
+            "stronger verification evidence."
+        ),
+        "snippet": """\
+from jis_core import TrustLevel
+
+# Assign trust based on verification
+if has_token:
+    trust = TrustLevel.L0_TOKEN
+if has_device_binding:
+    trust = TrustLevel.L1_DEVICE
+if has_biometric:
+    trust = TrustLevel.L2_BIOMETRIC
+""",
+        "references": ["IETF draft-vandemeent-rvp-continuous-verification-01 §3"],
+    },
+    "RVP-002": {
+        "title": "Continuous Verification (not one-time auth)",
+        "packages": ["tibet-core"],
+        "install": "pip install tibet-core",
+        "description": (
+            "RVP requires ongoing verification, not just login-time auth. "
+            "Trust can decay and must be re-verified."
+        ),
+        "snippet": """\
+# Implement trust decay
+from tibet_core import check_trust_decay
+
+current_trust = check_trust_decay(
+    actor="jis:agent:bob",
+    last_verified=last_activity_timestamp,
+    decay_rate=0.1  # Trust decreases over inactivity
+)
+""",
+        "references": ["IETF draft-vandemeent-rvp-continuous-verification-01 §3.2"],
+    },
+
+    # --- AINS (IETF Draft) ---
+    "AINS-001": {
+        "title": "AINS Agent Registration (.aint domain)",
+        "packages": ["jis-core"],
+        "install": "pip install jis-core",
+        "description": (
+            "AINS provides DNS-like resolution for AI agents via .aint domains. "
+            "Register your agent with capabilities and trust score."
+        ),
+        "snippet": """\
+# Register agent via AINS API
+curl -X POST https://brein.jaspervandemeent.nl/api/ains/register \\
+  -d '{"domain":"myagent","capabilities":["chat","code"],"trust_score":0.5}'
+
+# Resolve agent
+curl https://brein.jaspervandemeent.nl/api/ains/resolve/myagent
+""",
+        "references": ["IETF draft-vandemeent-ains-discovery-01 §3"],
     },
 
     # --- Provider Security ---
@@ -268,11 +454,35 @@ CATEGORY_RECOMMENDATIONS: Dict[str, Dict[str, Any]] = {
         "install": "pip install tibet-nis2 inject-bender tibet-sbom",
         "description": "tibet-nis2 for NIS2 monitoring, inject-bender for incident response, tibet-sbom for supply chain.",
     },
+    "tibet": {
+        "title": "TIBET Provenance (IETF Draft)",
+        "packages": ["tibet-core"],
+        "install": "pip install tibet-core",
+        "description": "tibet-core for ERIN/ERAAN/EROMHEEN/ERACHTER token provenance. See IETF draft-vandemeent-tibet-provenance.",
+    },
     "jis": {
-        "title": "JIS Identity Compliance",
-        "packages": ["jis-core", "tibet-core", "tibet-forge"],
-        "install": "pip install jis-core tibet-core tibet-forge",
-        "description": "jis-core for identity, tibet-forge for trust scoring, tibet-core for provenance.",
+        "title": "JIS Identity (IETF Draft)",
+        "packages": ["jis-core", "tibet-core"],
+        "install": "pip install jis-core tibet-core",
+        "description": "jis-core for intent-based identity with jis: URI scheme. See IETF draft-vandemeent-jis-identity.",
+    },
+    "upip": {
+        "title": "UPIP Process Integrity (IETF Draft)",
+        "packages": ["tibet-core", "tibet-sbom"],
+        "install": "pip install tibet-core tibet-sbom",
+        "description": "UPIP 5-layer stack: STATE, DEPS, PROCESS, RESULT, VERIFY. See IETF draft-vandemeent-upip-process-integrity.",
+    },
+    "rvp": {
+        "title": "RVP Continuous Verification (IETF Draft)",
+        "packages": ["tibet-core", "jis-core"],
+        "install": "pip install tibet-core jis-core",
+        "description": "RVP graduated trust L0-L3 with continuous verification. See IETF draft-vandemeent-rvp-continuous-verification.",
+    },
+    "ains": {
+        "title": "AINS Agent Discovery (IETF Draft)",
+        "packages": ["jis-core"],
+        "install": "pip install jis-core",
+        "description": "AINS .aint domain resolution for AI agents. See IETF draft-vandemeent-ains-discovery.",
     },
     "pipa": {
         "title": "PIPA (Korea) Compliance with TIBET",

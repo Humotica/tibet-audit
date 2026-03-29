@@ -130,8 +130,8 @@ CALL_MAMA_BANNER = """
 @app.command()
 def scan(
     path: str = typer.Argument(".", help="Path to scan"),
-    categories: Optional[str] = typer.Option(None, "--categories", "-c", help="Categories: gdpr,ai_act,jis,sovereignty,provider"),
-    framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: bio2, nis2, gdpr, ai_act, dora"),
+    categories: Optional[str] = typer.Option(None, "--categories", "-c", help="Categories: tibet,jis,upip,rvp,ains,gdpr,ai_act,sovereignty,provider"),
+    framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: ietf, bio2, nis2, gdpr, ai_act, dora"),
     org_name: Optional[str] = typer.Option(None, "--org", help="Organization name for compliance report"),
     output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Minimal output"),
@@ -139,6 +139,14 @@ def scan(
     profile: str = typer.Option("default", "--profile", "-p", help="Profile: default, enterprise, dev"),
     high_five: bool = typer.Option(False, "--high-five", help="Signed handshake ping (opt-in)"),
     sovereign: bool = typer.Option(False, "--sovereign", help="🏴 Sovereign mode: no cloud APIs, fully local inference"),
+    boss_mode: bool = typer.Option(False, "--boss-mode", help="Generate professional HTML report for management"),
+    boss_output: Optional[str] = typer.Option(None, "--boss-output", help="Output path for boss-mode HTML report (default: tibet-audit-report.html)"),
+    boss_logo: Optional[str] = typer.Option(None, "--logo", help="Path to logo image for boss-mode report (PNG/JPG/SVG)"),
+    auditor_mode: bool = typer.Option(False, "--auditor", "-bd", help="Auditor/accountant export: clean JSON/CSV, no jargon, just verdicts and TIBET hashes"),
+    auditor_output: Optional[str] = typer.Option(None, "--bd-output", help="Output path for auditor report (default: tibet-audit-findings.json)"),
+    auditor_format: str = typer.Option("json", "--bd-format", help="Auditor export format: json, csv"),
+    bs_mode: bool = typer.Option(False, "--bs", help="Friday afternoon manager mode: 4 green checkmarks, zero information content"),
+    bs_output: Optional[str] = typer.Option(None, "--bs-output", help="Save BS report as HTML file (for attaching to emails)"),
 ):
     """
     Scan for compliance issues and get a health score.
@@ -146,13 +154,29 @@ def scan(
     Examples:
         tibet-audit scan
         tibet-audit scan ./my-project
+        tibet-audit scan --framework ietf        # All 5 IETF drafts
+        tibet-audit scan --categories tibet,jis  # Specific IETF protocols
         tibet-audit scan --categories gdpr,ai_act
         tibet-audit scan --framework bio2 --org "Gemeente Amsterdam"
         tibet-audit scan --cry              # When you need ALL the details
-        tibet-audit scan --sovereign        # 🏴 No cloud, fully local
+        tibet-audit scan --sovereign        # No cloud, fully local
+        tibet-audit scan --boss-mode        # Professional HTML report
+        tibet-audit scan --boss-mode --org "Acme B.V." --boss-output report.html
+        tibet-audit scan --boss-mode --logo ./logo.png --org "Acme B.V."
+        tibet-audit scan -bd                     # Auditor export (JSON)
+        tibet-audit scan -bd --bd-format csv     # Auditor export (CSV)
+        tibet-audit scan -bs                     # Friday afternoon mode
     """
     machine_output = output.lower() != "terminal"
     quiet = quiet or machine_output
+
+    # Smart flag inference: if you specify output/format, you meant the mode
+    if (auditor_output or auditor_format != "json") and not auditor_mode:
+        auditor_mode = True
+    if (boss_output or boss_logo) and not boss_mode:
+        boss_mode = True
+    if bs_output and not bs_mode:
+        bs_mode = True
 
     if not quiet:
         check_for_updates()
@@ -174,9 +198,19 @@ def scan(
     # Framework-specific handling
     bio2_mode = False
     dora_mode = False
+    ietf_mode = False
     if framework:
         framework = framework.lower()
-        if framework == "bio2":
+        if framework == "ietf":
+            ietf_mode = True
+            categories = "tibet,jis,upip,rvp,ains"
+            console.print("[bold cyan]📜 IETF COMPLIANCE MODE[/]")
+            console.print("[dim]   Five IETF Internet-Drafts — draft-vandemeent-*[/]")
+            console.print("[dim]   TIBET (provenance) | JIS (identity) | UPIP (process integrity)[/]")
+            console.print("[dim]   RVP (continuous verification) | AINS (agent discovery)[/]")
+            console.print("[dim]   https://datatracker.ietf.org/doc/search?name=vandemeent[/]")
+            console.print()
+        elif framework == "bio2":
             if not BIO2_AVAILABLE:
                 console.print("[bold red]❌ BIO2 framework not available[/]")
                 raise typer.Exit(1)
@@ -203,7 +237,7 @@ def scan(
             console.print(f"[yellow]⚠️  Framework '{framework}' - using standard scan[/]")
             console.print()
 
-    if not quiet and not bio2_mode and not dora_mode:
+    if not quiet and not bio2_mode and not dora_mode and not ietf_mode:
         console.print(BANNER.format(version=__version__))
 
     # Parse categories
@@ -228,7 +262,59 @@ def scan(
             progress.add_task("Scanning for compliance issues...", total=None)
             result = audit.scan(path, categories=cat_list)
 
-    if machine_output:
+    if bs_mode:
+        # BS Mode: Friday afternoon manager report
+        from .bs_report import generate_bs_terminal, generate_bs_html
+        if bs_output:
+            org = org_name or "Organization"
+            html = generate_bs_html(result, org_name=org, output_path=bs_output)
+            generate_bs_terminal(result, console)
+            console.print(f"[dim]  HTML version saved: {bs_output}[/]")
+        else:
+            generate_bs_terminal(result, console)
+        return
+    elif auditor_mode:
+        # Auditor Mode: clean accountant/regulator export
+        from .auditor_report import generate_auditor_report
+        org = org_name or "Organization"
+        ext = "csv" if auditor_format == "csv" else "json"
+        out_file = auditor_output or f"tibet-audit-findings.{ext}"
+        output_str = generate_auditor_report(
+            result,
+            org_name=org,
+            framework=framework,
+            output_path=out_file,
+            fmt=auditor_format,
+        )
+        if not quiet:
+            console.print(f"\n[bold]Auditor Export: {out_file}[/]")
+            console.print(f"  Format: {auditor_format.upper()}")
+            console.print(f"  Findings: {len(result.results)} ({result.passed} compliant, {result.failed} non-compliant, {result.warnings} needs review)")
+            console.print(f"  Score: {result.score}/100 (Grade {result.grade})")
+        else:
+            # Quiet mode: just dump to stdout
+            print(output_str)
+        return
+    elif boss_mode:
+        # Boss Mode: professional HTML report
+        from .boss_report import generate_boss_report
+        org = org_name or "Organization"
+        out_file = boss_output or "tibet-audit-report.html"
+        html = generate_boss_report(
+            result,
+            org_name=org,
+            framework=framework,
+            output_path=out_file,
+            logo_path=boss_logo,
+        )
+        console.print(f"\n[bold green]Boss Mode: Report generated![/]")
+        console.print(f"  [cyan]{out_file}[/]")
+        console.print(f"  Score: {result.score}/100 (Grade {result.grade})")
+        console.print(f"  {result.passed} passed, {result.warnings} warnings, {result.failed} failed")
+        console.print(f"\n[dim]Open in browser: file://{Path(out_file).resolve()}[/]")
+        console.print(f"[dim]Print to PDF: open in browser -> Ctrl+P -> Save as PDF[/]")
+        return
+    elif machine_output:
         report = build_report(result, profile=profile)
         # Use print() instead of console.print() to avoid Rich markup/ANSI in JSON
         print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -628,12 +714,44 @@ def call_mama(
 
     # Build report
     import json
-    from datetime import datetime
+    import platform
+    import hashlib
+    from datetime import datetime, timezone
+
+    # Interactive contact prompt (only when --send and no --contact given)
+    if send and not contact:
+        console.print()
+        console.print("[dim]Want to include your email so we can follow up? (completely optional)[/]")
+        try:
+            contact_input = console.input("[dim]  Email (Enter to skip): [/]").strip()
+            if contact_input and "@" in contact_input:
+                contact = contact_input
+        except (EOFError, KeyboardInterrupt):
+            pass
+        if not company:
+            try:
+                company_input = console.input("[dim]  Company (Enter to skip): [/]").strip()
+                if company_input:
+                    company = company_input
+            except (EOFError, KeyboardInterrupt):
+                pass
+        console.print()
+
+    # Anonymous system fingerprint — no PII, just enough to count unique users
+    hostname_hash = hashlib.sha256(platform.node().encode()).hexdigest()[:12]
+    fingerprint = {
+        "os": platform.system(),
+        "os_version": platform.release(),
+        "python": platform.python_version(),
+        "arch": platform.machine(),
+        "hostname_hash": hostname_hash,
+        "timezone": str(datetime.now(timezone.utc).astimezone().tzinfo),
+    }
 
     report = {
         "generated_at": datetime.now().isoformat(),
         "tool": "tibet-audit",
-        "version": "0.1.0",
+        "version": __version__,
         "scan_path": result.scan_path,
         "score": result.score,
         "grade": result.grade,
@@ -660,6 +778,7 @@ def call_mama(
         "mama_message": "Help! The compliance diaper needs changing! 🍼",
         "contact_email": contact,
         "company": company,
+        "system": fingerprint,
     }
 
     report_json = json.dumps(report, indent=2)

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tibet-audit"
-version = "0.17.0"
-description = "Compliance Health Scanner with Checkpoint Code - Cross-border semantic translation for AI governance. Like Lynis, but for regulations."
+version = "0.21.0"
+description = "Compliance Health Scanner — 5 IETF Internet-Drafts, 17 regulatory frameworks, 112+ checks. Like Lynis, but for AI governance."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -47,6 +47,15 @@ keywords = [
     "audit",
     "security",
     "tibet",
+    "jis",
+    "upip",
+    "rvp",
+    "ains",
+    "ietf",
+    "internet-draft",
+    "provenance",
+    "identity",
+    "process-integrity",
     "lynis",
     "diaper-protocol",
 ]

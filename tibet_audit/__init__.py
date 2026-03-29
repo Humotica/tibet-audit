@@ -17,7 +17,7 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.17.0"  # Template engine + fix command actually fixes things
+__version__ = "0.21.0"  # IETF compliance checks: TIBET, JIS, UPIP, RVP, AINS (24 checks)
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 
