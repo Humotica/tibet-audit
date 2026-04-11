@@ -98,7 +98,8 @@ class TIBETAudit:
         path: str = ".",
         categories: Optional[List[str]] = None,
         live_mode: bool = False,
-        output_callback: Optional[Callable[[str], None]] = None
+        output_callback: Optional[Callable[[str], None]] = None,
+        extra_context: Optional[dict] = None,
     ) -> ScanResult:
         """
         Run all compliance checks on the given path.
@@ -123,6 +124,8 @@ class TIBETAudit:
             "tibet_available": self._check_tibet_available(),
             "sovereign_mode": self.sovereign_mode,
         }
+        if extra_context:
+            context.update(extra_context)
 
         # Get console for live mode output
         console = None

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tibet-audit"
-version = "0.21.0"
+version = "0.22.0"
 description = "Compliance Health Scanner — 5 IETF Internet-Drafts, 17 regulatory frameworks, 112+ checks. Like Lynis, but for AI governance."
 readme = "README.md"
 license = "MIT"

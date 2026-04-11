@@ -20,12 +20,14 @@ from .sovereignty import SOVEREIGNTY_CHECKS  # Sovereignty and residency
 from .provider_security import PROVIDER_SECURITY_CHECKS  # Provider security
 from .nis2 import NIS2_CHECKS            # EU NIS2 Directive
 from .ucp import UCP_CHECKS              # UCP Commerce Protocol
+from .tls import TLS_CHECKS              # TLS/SSL certificate validation
 from .health import HEALTH_CHECKS        # System health & energy
 from .humotica_pillars import HUMOTICA_PILLAR_CHECKS  # Three Pillars for A-grade
 
 # All available checks - Global Coverage!
 ALL_CHECKS = []
 ALL_CHECKS.extend(HUMOTICA_PILLAR_CHECKS)  # 🏛️ Three Pillars (A-grade gate!)
+ALL_CHECKS.extend(TLS_CHECKS)         # 🔐 TLS/SSL Certificate Validation
 ALL_CHECKS.extend(HEALTH_CHECKS)       # 💚 System Health & Energy
 ALL_CHECKS.extend(TIBET_CHECKS)        # 📜 TIBET Provenance (IETF)
 ALL_CHECKS.extend(JIS_CHECKS)         # 🧭 JIS Identity (IETF)

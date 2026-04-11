@@ -17,7 +17,7 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.21.0"  # IETF compliance checks: TIBET, JIS, UPIP, RVP, AINS (24 checks)
+__version__ = "0.22.0"  # TLS/SSL certificate scanning: --tls flag, 8 checks (chain, expiry, protocol, cipher, hostname, key, headers, disclosure)
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 

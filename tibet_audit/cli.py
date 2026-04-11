@@ -147,6 +147,7 @@ def scan(
     auditor_format: str = typer.Option("json", "--bd-format", help="Auditor export format: json, csv"),
     bs_mode: bool = typer.Option(False, "--bs", help="Friday afternoon manager mode: 4 green checkmarks, zero information content"),
     bs_output: Optional[str] = typer.Option(None, "--bs-output", help="Save BS report as HTML file (for attaching to emails)"),
+    tls_host: Optional[str] = typer.Option(None, "--tls", help="Scan TLS/SSL certificate for a remote host (e.g., emigreen.eu, example.com:8443)"),
 ):
     """
     Scan for compliance issues and get a health score.
@@ -166,6 +167,8 @@ def scan(
         tibet-audit scan -bd                     # Auditor export (JSON)
         tibet-audit scan -bd --bd-format csv     # Auditor export (CSV)
         tibet-audit scan -bs                     # Friday afternoon mode
+        tibet-audit scan --tls emigreen.eu       # TLS certificate scan
+        tibet-audit scan --tls example.com:8443  # Custom port
     """
     machine_output = output.lower() != "terminal"
     quiet = quiet or machine_output
@@ -243,13 +246,32 @@ def scan(
     # Parse categories
     cat_list = categories.split(",") if categories else None
 
+    # Build extra context for TLS scanning
+    extra_ctx = {}
+    if tls_host:
+        # Parse host:port
+        if ":" in tls_host and not tls_host.startswith("["):
+            parts = tls_host.rsplit(":", 1)
+            extra_ctx["tls_host"] = parts[0]
+            extra_ctx["tls_port"] = parts[1]
+        else:
+            extra_ctx["tls_host"] = tls_host
+        # Auto-include tls category
+        if cat_list is None:
+            cat_list = ["tls"]
+        elif "tls" not in cat_list:
+            cat_list.append("tls")
+        if not quiet:
+            console.print(f"[bold cyan]🔐 TLS SCAN: {tls_host}[/]")
+            console.print()
+
     # Run scan
     audit = TIBETAudit(sovereign_mode=sovereign)
 
     if cry:
         # Cry mode: show live progress Lynis-style
         console.print("[bold cyan]Running checks...[/]\n")
-        result = audit.scan(path, categories=cat_list, live_mode=True)
+        result = audit.scan(path, categories=cat_list, live_mode=True, extra_context=extra_ctx or None)
         console.print()  # Newline after live progress
     else:
         # Normal mode: spinner
@@ -260,7 +282,7 @@ def scan(
             transient=True,
         ) as progress:
             progress.add_task("Scanning for compliance issues...", total=None)
-            result = audit.scan(path, categories=cat_list)
+            result = audit.scan(path, categories=cat_list, extra_context=extra_ctx or None)
 
     if bs_mode:
         # BS Mode: Friday afternoon manager report
