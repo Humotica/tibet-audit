@@ -148,6 +148,9 @@ def scan(
     bs_mode: bool = typer.Option(False, "--bs", help="Friday afternoon manager mode: 4 green checkmarks, zero information content"),
     bs_output: Optional[str] = typer.Option(None, "--bs-output", help="Save BS report as HTML file (for attaching to emails)"),
     tls_host: Optional[str] = typer.Option(None, "--tls", help="Scan TLS/SSL certificate for a remote host (e.g., emigreen.eu, example.com:8443)"),
+    compliance: bool = typer.Option(False, "--compliance", help="Show ISO/EU AI Act/NIS2/GDPR compliance coverage matrix"),
+    compliance_output: Optional[str] = typer.Option(None, "--compliance-output", help="Export compliance report as JSON (e.g., compliance.json)"),
+    jis_export: Optional[str] = typer.Option(None, "--jis", help="Export compliance block for jis.json (e.g., jis-compliance.json)"),
 ):
     """
     Scan for compliance issues and get a health score.
@@ -169,6 +172,9 @@ def scan(
         tibet-audit scan -bs                     # Friday afternoon mode
         tibet-audit scan --tls emigreen.eu       # TLS certificate scan
         tibet-audit scan --tls example.com:8443  # Custom port
+        tibet-audit scan --compliance            # ISO/EU coverage matrix
+        tibet-audit scan --jis compliance.json   # Export for jis.json
+        tibet-audit scan --compliance --compliance-output full.json
     """
     machine_output = output.lower() != "terminal"
     quiet = quiet or machine_output
@@ -283,6 +289,99 @@ def scan(
         ) as progress:
             progress.add_task("Scanning for compliance issues...", total=None)
             result = audit.scan(path, categories=cat_list, extra_context=extra_ctx or None)
+
+    # ── Compliance / JIS export modes ──────────────────────────────────
+    if compliance or compliance_output or jis_export:
+        from .compliance_map import get_framework_coverage, generate_jis_compliance_block, FRAMEWORKS
+
+        if jis_export:
+            # Export jis.json compliance block
+            jis_block = generate_jis_compliance_block(result.results)
+            Path(jis_export).write_text(json.dumps(jis_block, indent=2, ensure_ascii=False))
+            console.print(f"\n[bold green]JIS compliance block exported: {jis_export}[/]")
+            console.print(f"  [dim]{jis_block['compliance']['summary']['total']} checks, "
+                         f"{jis_block['compliance']['summary']['passed']} passed[/]")
+            if not compliance:
+                return
+
+        coverage = get_framework_coverage(result.results)
+
+        if compliance_output:
+            # Export full compliance report
+            report = {
+                "scanner": "tibet-audit",
+                "version": __version__,
+                "score": result.score,
+                "grade": result.grade,
+                "frameworks": {},
+            }
+            for fw_key, cov in coverage.items():
+                report["frameworks"][fw_key] = {
+                    "name": cov["name"],
+                    "title": cov["title"],
+                    "coverage_pct": cov["coverage_pct"],
+                    "total_checks": cov["total_checks"],
+                    "passed": cov["passed"],
+                    "failed": cov["failed"],
+                    "total_clauses": cov["total_clauses"],
+                    "passed_clauses": cov["passed_clauses"],
+                    "clauses": cov["clauses"],
+                }
+            Path(compliance_output).write_text(json.dumps(report, indent=2, ensure_ascii=False))
+            console.print(f"\n[bold green]Compliance report exported: {compliance_output}[/]")
+
+        if compliance:
+            # Print compliance coverage matrix to terminal
+            console.print()
+            console.print(Panel(
+                f"[bold]Compliance Coverage Matrix[/]\n"
+                f"[dim]Score: {result.score}/100 (Grade {result.grade}) — "
+                f"{result.passed} passed, {result.warnings} warnings, {result.failed} failed[/]",
+                title="[bold cyan]ISO / EU / Regulatory Mapping[/]",
+                border_style="cyan",
+            ))
+
+            # Framework coverage table
+            table = Table(show_header=True, header_style="bold", box=box.ROUNDED)
+            table.add_column("Framework", style="cyan", width=28)
+            table.add_column("Standard", width=32)
+            table.add_column("Checks", justify="right", width=8)
+            table.add_column("Pass", justify="right", width=6)
+            table.add_column("Fail", justify="right", width=6)
+            table.add_column("Coverage", justify="right", width=10)
+            table.add_column("Clauses", justify="right", width=9)
+
+            # Sort by coverage descending
+            sorted_fw = sorted(coverage.items(), key=lambda x: x[1]["coverage_pct"], reverse=True)
+
+            for fw_key, cov in sorted_fw:
+                pct = cov["coverage_pct"]
+                color = "green" if pct >= 90 else "yellow" if pct >= 70 else "red"
+                table.add_row(
+                    cov["name"],
+                    cov["title"][:30],
+                    str(cov["total_checks"]),
+                    f"[green]{cov['passed']}[/]",
+                    f"[red]{cov['failed']}[/]" if cov["failed"] > 0 else "[green]0[/]",
+                    f"[{color}]{pct}%[/]",
+                    f"{cov['passed_clauses']}/{cov['total_clauses']}",
+                )
+
+            console.print(table)
+
+            # Per-framework clause detail (collapsed)
+            for fw_key, cov in sorted_fw:
+                if cov["failed"] > 0:
+                    console.print(f"\n[bold yellow]  {cov['name']} — failing clauses:[/]")
+                    for clause_key, clause in cov["clauses"].items():
+                        if clause["status"] == "fail":
+                            checks_str = ", ".join(clause["checks"])
+                            console.print(f"    [red]✗[/] {clause['clause']}: {clause['title']} [{checks_str}]")
+
+            console.print()
+            if not compliance_output and not jis_export:
+                console.print("[dim]  Export: --compliance-output report.json  |  --jis jis-compliance.json[/]")
+            return
 
     if bs_mode:
         # BS Mode: Friday afternoon manager report
