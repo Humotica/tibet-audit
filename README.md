@@ -1,15 +1,112 @@
 # TIBET Audit
 
-> **SSL secures the connection. TIBET secures the timeline.**
+> **SSL secures the connection. TIBET secures the timeline. JIS verifies the intent.**
 
 [![PyPI version](https://badge.fury.io/py/tibet-audit.svg)](https://badge.fury.io/py/tibet-audit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Compliance Health Scanner** - Like [Lynis](https://cisofy.com/lynis/), but for regulations.
+**Compliance Health Scanner** — Like [Lynis](https://cisofy.com/lynis/), but for regulations.
 
-**45+ checks** across **12 frameworks** covering GDPR, AI Act, NIS2, BIO2 (Dutch Gov), PIPA, APPI, PDPA, LGPD, and more.
+**120 checks** across **17 regulatory frameworks**, mapped to **10 ISO/EU standards** including ISO 42001, EU AI Act, NIS2, GDPR, and SOC 2.
 
-### 🏦 NEW: DORA Framework (Financial Sector)
+---
+
+### NEW in v0.23.0: ISO/EU Compliance Mapping
+
+Every check is now cross-referenced to the exact ISO clause and EU article it satisfies.
+Generate machine-readable trustworthiness reports for service agreements, SBOMs, and GRC tools.
+
+```bash
+# Show coverage matrix across all 10 frameworks
+$ tibet-audit scan --compliance
+
+╭─────────────────────── ISO / EU / Regulatory Mapping ────────────────────────╮
+│ Compliance Coverage Matrix                                                   │
+│ Score: 82/100 (Grade B) — 98 passed, 12 warnings, 5 failed                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+┌────────────────────────┬──────────────────────────┬────────┬──────────┬─────────┐
+│ Framework              │ Standard                 │ Checks │ Coverage │ Clauses │
+├────────────────────────┼──────────────────────────┼────────┼──────────┼─────────┤
+│ ISO/IEC 42001:2023     │ AI Management System     │     33 │    92.0% │   10/11 │
+│ ISO/IEC 27001:2022     │ Information Security     │     83 │    88.5% │   18/21 │
+│ EU AI Act              │ Regulation 2024/1689     │     41 │    85.0% │   17/20 │
+│ NIS2 Directive         │ Directive 2022/2555      │     41 │    82.0% │    8/9  │
+│ GDPR                   │ Regulation 2016/679      │     18 │    78.0% │   10/13 │
+│ ISO/IEC 5338:2023      │ AI System Lifecycle      │      8 │    87.5% │    3/4  │
+│ NIST AI RMF 1.0        │ AI Risk Management       │      8 │    75.0% │    5/7  │
+│ SOC 2                  │ Trust Service Criteria    │     16 │    81.0% │    9/11 │
+│ ISO/IEC 27701:2019     │ Privacy Management       │     40 │    72.0% │    6/8  │
+│ ISO/IEC 23894:2023     │ AI Risk Management       │      5 │    80.0% │    2/3  │
+└────────────────────────┴──────────────────────────┴────────┴──────────┴─────────┘
+```
+
+```bash
+# Export compliance block for jis.json (SBOM/identity documents)
+$ tibet-audit scan --jis compliance.json
+
+# Export full compliance report
+$ tibet-audit scan --compliance-output report.json
+
+# Combine: scan TLS + show compliance matrix
+$ tibet-audit scan --tls emigreen.eu --compliance
+```
+
+**The jis.json output** is machine-readable and maps every check to ISO/EU references:
+
+```json
+{
+  "compliance": {
+    "checks": [
+      {
+        "id": "TIBET-001",
+        "description": "Provenance chain integrity",
+        "status": "PASS",
+        "iso_42001": "ISO/IEC 42001:2023 §6.1.2",
+        "eu_ai_act": "EU AI Act Art.12",
+        "iso_5338": "ISO/IEC 5338:2023 §7.3.2",
+        "evidence": "tibet://audit/TIBET-001/pass"
+      }
+    ],
+    "summary": {
+      "total": 120,
+      "passed": 98,
+      "iso_42001_coverage": "92.0%",
+      "eu_ai_act_coverage": "85.0%",
+      "nis2_coverage": "82.0%"
+    }
+  }
+}
+```
+
+**10 standards mapped:**
+
+| Standard | Scope | Our Coverage |
+|----------|-------|-------------|
+| ISO/IEC 42001:2023 | AI Management System | TIBET provenance, SNAFT, Cortex |
+| ISO/IEC 27001:2022 | Information Security | JIS identity, TBZ encryption |
+| ISO/IEC 23894:2023 | AI Risk Management | tibet-triage + airlock |
+| ISO/IEC 5338:2023 | AI Lifecycle | TIBET = reference implementation |
+| ISO/IEC 27701:2019 | Privacy Management | I-Poll + UPIP evaporate |
+| EU AI Act | High-risk AI systems | Full Article 9-15 coverage |
+| NIS2 Directive | Cybersecurity | Article 21 measures |
+| GDPR | Data protection | Articles 5-49 |
+| NIST AI RMF 1.0 | AI Risk (US) | GOVERN/MAP/MEASURE functions |
+| SOC 2 | Trust Services | Security, availability, PI, privacy |
+
+---
+
+### NEW in v0.22.0: TLS/SSL Certificate Scanning
+
+```bash
+# Scan any domain's TLS certificate chain
+$ tibet-audit scan --tls emigreen.eu
+```
+
+8 checks: chain validation, expiry, protocol version, cipher strength, hostname match, key strength, security headers, version disclosure.
+
+---
+
+### DORA Framework (Financial Sector)
 
 **Digital Operational Resilience Act** - EU regulation for financial entities. Deadline passed: January 17, 2025.
 
@@ -459,7 +556,7 @@ Paul was a border guard at Checkpoint Charlie (1985-1989). Now he guards the sem
 
 ## Global Coverage Summary
 
-**45 checks** across **10 compliance frameworks** covering **all inhabited continents**:
+**120 checks** across **17 regulatory frameworks**, mapped to **10 ISO/EU standards**, covering **all inhabited continents + Antarctica**:
 
 | Region | Framework | Checks | Key Feature |
 |--------|-----------|--------|-------------|
@@ -543,7 +640,7 @@ TIBET Audit is designed for:
 
 ## Contributing
 
-Found a bug? Want to add checks for HIPAA, SOX, ISO 27001, or another framework?
+Found a bug? Want to add checks for HIPAA, SOX, or another framework?
 
 1. Fork the repo
 2. Add your check in `tibet_audit/checks/`
@@ -572,8 +669,12 @@ Built with 💙 by the [HumoticaOS](https://humotica.com) team:
 
 *"One Love, One fAmIly"* 💙
 
-**TIBET is now an IETF Internet-Draft:**
-[draft-vandemeent-tibet-provenance-00](https://datatracker.ietf.org/doc/draft-vandemeent-tibet-provenance/)
+**Five IETF Internet-Drafts:**
+[TIBET](https://datatracker.ietf.org/doc/draft-vandemeent-tibet-provenance/) |
+[JIS](https://datatracker.ietf.org/doc/draft-vandemeent-jis-identity/) |
+[UPIP](https://datatracker.ietf.org/doc/draft-vandemeent-upip-process/) |
+[RVP](https://datatracker.ietf.org/doc/draft-vandemeent-rvp-verification/) |
+[AINS](https://datatracker.ietf.org/doc/draft-vandemeent-ains-discovery/)
 
 ---
 
