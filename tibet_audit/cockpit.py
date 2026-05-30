@@ -324,9 +324,18 @@ def classify_event(record: dict[str, Any]) -> CockpitFinding:
 
     if disposition in {"quarantine", "reject", "triage-disguised"}:
         return CockpitFinding("warning", source, f"{name}: {disposition} ({intake})", record)
-    if "cmail" in str(record.get("kind", "")):
-        subject = record.get("subject") or name
-        message_type = record.get("message_type") or "message"
+    if "cmail" in str(record.get("kind", "")) or record.get("_emitter") == "tibet-cmail":
+        # Subject fallback chain: top-level (tibet-cmail 0.2.5+) → payload.subject
+        # → payload.to → event_id. Lets pre-0.2.5 Light envelopes still render
+        # as "cmail message: <recipient>" instead of the opaque event_id.
+        payload = record.get("payload") or {}
+        subject = (
+            record.get("subject")
+            or payload.get("subject")
+            or payload.get("to")
+            or name
+        )
+        message_type = record.get("message_type") or payload.get("message_type") or "message"
         return CockpitFinding("info", source, f"cmail {message_type}: {subject}", record)
     if record.get("engine") == "snaft" or "snaft" in source:
         verdict = record.get("verdict") or record.get("action") or "verdict"
