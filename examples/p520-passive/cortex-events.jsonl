@@ -1,0 +1,2 @@
+{"ts":1780030092.0,"system":"tibet-cortex","cortex_level":"L2","subject":"local-memory","action":"bind-vector-store"}
+{"ts":1780030093.0,"system":"tibet-cortex","cortex_level":"L4","subject":"external-ai-context","action":"deny-unsealed-context"}

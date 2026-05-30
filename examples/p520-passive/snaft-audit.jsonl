@@ -1,0 +1,2 @@
+{"ts":1780030084.0,"engine":"snaft","default_policy":"deny","fail_mode":"closed","verdict":"deny","reason":"deny_external_ai_inbound ON","origin":"external_ai"}
+{"ts":1780030085.0,"engine":"snaft","default_policy":"deny","fail_mode":"closed","verdict":"allow","reason":"local operator intent","origin":"local"}

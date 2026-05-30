@@ -1,0 +1,2 @@
+{"ts":1780030088.0,"observation_layer":"tibet-gateway","lane_class":"agent-high","lane_collision_policy":"graceful_yield","coffee_lane_policy":"fork_on_hop_off","_emitter":"cap-bus-runtime"}
+{"ts":1780030089.0,"observation_layer":"tibet-gateway","lane_class":"external-ai","lane_collision_policy":"deny","coffee_lane_policy":"freeze_resume","_emitter":"snaft"}

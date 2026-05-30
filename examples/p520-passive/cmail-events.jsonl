@@ -1,0 +1,2 @@
+{"ts":1780030090.0,"kind":"cmail.message.v1","from":"jasper","to":"root_idd.aint","subject":"Re: Welkom in cmail","content_hash":"sha256:16a4fe5657ea9c679414f574c9ca00bf0786c78a9ba3aa9d02347adb99846b14","message_type":"message"}
+{"ts":1780030091.0,"kind":"cmail.message.v1","from":"snaft","to":"jasper.aint","subject":"External AI quarantined","content_hash":"sha256:incident-demo","message_type":"command","intent":"command","sealed":true}

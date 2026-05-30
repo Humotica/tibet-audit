@@ -1,0 +1,2 @@
+{"ts":1780030086.0,"operator":"tibet-pol","approval_state":"approved","subject":"cmail_313d29d7f46d4087","decision":"allow-local-send"}
+{"ts":1780030087.0,"operator":"tibet-pol","approval_state":"blocked","subject":"external_ai_tool_call","decision":"deny-remote-tool-invocation"}

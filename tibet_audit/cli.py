@@ -35,6 +35,12 @@ from .checks.base import Status, Severity
 from .runtime import RuntimeAudit
 from .mercury import build_report, generate_roadmap, generate_upgrades, diff_reports, high_five
 from . import __version__
+from .cockpit import (
+    build_cockpit_snapshot,
+    classify_event,
+    discover_evidence_sources,
+    load_tail_events,
+)
 
 # Framework imports
 try:
@@ -89,38 +95,12 @@ app = typer.Typer(
 console = Console()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BANNER
-# ═══════════════════════════════════════════════════════════════════════════════
-
-BANNER = """
-[bold blue]══════════════════════════════════════════════════════════════════════════════[/]
-[bold blue]  ████████╗██╗██████╗ ███████╗████████╗     █████╗ ██╗   ██╗██████╗ ██╗████████╗[/]
-[bold blue]  ╚══██╔══╝██║██╔══██╗██╔════╝╚══██╔══╝    ██╔══██╗██║   ██║██╔══██╗██║╚══██╔══╝[/]
-[bold blue]     ██║   ██║██████╔╝█████╗     ██║       ███████║██║   ██║██║  ██║██║   ██║   [/]
-[bold blue]     ██║   ██║██╔══██╗██╔══╝     ██║       ██╔══██║██║   ██║██║  ██║██║   ██║   [/]
-[bold blue]     ██║   ██║██████╔╝███████╗   ██║       ██║  ██║╚██████╔╝██████╔╝██║   ██║   [/]
-[bold blue]     ╚═╝   ╚═╝╚═════╝ ╚══════╝   ╚═╝       ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝   ╚═╝   [/]
-[bold blue]══════════════════════════════════════════════════════════════════════════════[/]
-[dim]  Compliance Health Scanner v{version}[/]
-[dim]  "SSL secures the connection. TIBET secures the timeline. JIS verifies the intent."[/]
-[bold blue]══════════════════════════════════════════════════════════════════════════════[/]
-"""
-
-DIAPER_BANNER = """
-[bold yellow]══════════════════════════════════════════════════════════════════════════════[/]
-[bold yellow]  🍼 DIAPER PROTOCOL™ ACTIVATED[/]
-[dim]  "Press the button, hands free, diaper change, server fixed."[/]
-[bold yellow]══════════════════════════════════════════════════════════════════════════════[/]
-"""
-
-CALL_MAMA_BANNER = """
-[bold red]══════════════════════════════════════════════════════════════════════════════[/]
-[bold red]  📞 CALLING M.A.M.A...[/]
-[bold red]  Mission Assurance & Monitoring Agent[/]
-[dim]  "When the diaper is too dirty, you call for backup."[/]
-[bold red]══════════════════════════════════════════════════════════════════════════════[/]
-"""
+def _print_header(title: str, subtitle: str | None = None, border_style: str = "blue") -> None:
+    """Render a clean, business-like header panel."""
+    body = f"[bold]{title}[/]"
+    if subtitle:
+        body += f"\n[dim]{subtitle}[/]"
+    console.print(Panel(body, border_style=border_style, padding=(0, 2)))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -191,18 +171,21 @@ def scan(
         check_for_updates()
 
     if sovereign:
-        console.print("[bold cyan]🏴 SOVEREIGN MODE[/]")
-        console.print("[dim]   All checks run locally. No data leaves your machine.[/]")
-        console.print("[dim]   \"Your compliance, your infrastructure, your sovereignty.\"[/]")
-        console.print()
+        _print_header(
+            "Sovereign Mode",
+            'All checks run locally. No data leaves your machine.\n"Your compliance, your infrastructure, your sovereignty."',
+            border_style="cyan",
+        )
         # Set environment variable for checks to respect
         import os
         os.environ["TIBET_SOVEREIGN_MODE"] = "1"
 
     if cry:
-        console.print("[bold red]😭 CRY MODE ACTIVATED - Full verbose output[/]")
-        console.print("[dim]   \"When everything is on fire, you need all the details.\"[/]")
-        console.print()
+        _print_header(
+            "Verbose Mode",
+            '"When everything is on fire, you need all the details."',
+            border_style="red",
+        )
 
     # Framework-specific handling
     bio2_mode = False
@@ -213,41 +196,51 @@ def scan(
         if framework == "ietf":
             ietf_mode = True
             categories = "tibet,jis,upip,rvp,ains"
-            console.print("[bold cyan]📜 IETF COMPLIANCE MODE[/]")
-            console.print("[dim]   Five IETF Internet-Drafts — draft-vandemeent-*[/]")
-            console.print("[dim]   TIBET (provenance) | JIS (identity) | UPIP (process integrity)[/]")
-            console.print("[dim]   RVP (continuous verification) | AINS (agent discovery)[/]")
-            console.print("[dim]   https://datatracker.ietf.org/doc/search?name=vandemeent[/]")
-            console.print()
+            _print_header(
+                "IETF Compliance Mode",
+                "Five IETF Internet-Drafts — draft-vandemeent-*\n"
+                "TIBET (provenance) | JIS (identity) | UPIP (process integrity)\n"
+                "RVP (continuous verification) | AINS (agent discovery)\n"
+                "https://datatracker.ietf.org/doc/search?name=vandemeent",
+                border_style="cyan",
+            )
         elif framework == "bio2":
             if not BIO2_AVAILABLE:
                 console.print("[bold red]❌ BIO2 framework not available[/]")
                 raise typer.Exit(1)
             bio2_mode = True
             org = org_name or "Organization"
-            console.print("[bold orange3]🏛️  BIO2 COMPLIANCE MODE[/]")
-            console.print(f"[dim]   Baseline Informatiebeveiliging Overheid 2 (v{BIO2_FRAMEWORK['version']})[/]")
-            console.print(f"[dim]   Organisatie: {org}[/]")
-            console.print(f"[dim]   {BIO2_FRAMEWORK['nis2_alignment']}[/]")
-            console.print()
+            _print_header(
+                "BIO2 Compliance Mode",
+                f"Baseline Informatiebeveiliging Overheid 2 (v{BIO2_FRAMEWORK['version']})\n"
+                f"Organisatie: {org}\n"
+                f"{BIO2_FRAMEWORK['nis2_alignment']}",
+                border_style="orange3",
+            )
         elif framework == "dora":
             if not DORA_AVAILABLE:
                 console.print("[bold red]❌ DORA framework not available[/]")
                 raise typer.Exit(1)
             dora_mode = True
             org = org_name or "Financial Entity"
-            console.print("[bold green]🏦 DORA COMPLIANCE MODE[/]")
-            console.print(f"[dim]   Digital Operational Resilience Act (v{DORA_FRAMEWORK['version']})[/]")
-            console.print(f"[dim]   Entity: {org}[/]")
-            console.print(f"[dim]   Deadline: {DORA_FRAMEWORK['deadline']} | Pillars: {DORA_FRAMEWORK['pillars']} | BIO2 overlap: {DORA_FRAMEWORK['bio2_overlap']}[/]")
-            console.print(f"[dim]   TIBET = Pillar 5 compliance (Information Sharing)[/]")
-            console.print()
+            _print_header(
+                "DORA Compliance Mode",
+                f"Digital Operational Resilience Act (v{DORA_FRAMEWORK['version']})\n"
+                f"Entity: {org}\n"
+                f"Deadline: {DORA_FRAMEWORK['deadline']} | Pillars: {DORA_FRAMEWORK['pillars']} | BIO2 overlap: {DORA_FRAMEWORK['bio2_overlap']}\n"
+                "TIBET = Pillar 5 compliance (Information Sharing)",
+                border_style="green",
+            )
         else:
             console.print(f"[yellow]⚠️  Framework '{framework}' - using standard scan[/]")
             console.print()
 
     if not quiet and not bio2_mode and not dora_mode and not ietf_mode:
-        console.print(BANNER.format(version=__version__))
+        _print_header(
+            f"TIBET Audit v{__version__}",
+            'Compliance Health Scanner. "SSL secures the connection. TIBET secures the timeline. JIS verifies the intent."',
+            border_style="blue",
+        )
 
     # Parse categories
     cat_list = categories.split(",") if categories else None
@@ -268,8 +261,7 @@ def scan(
         elif "tls" not in cat_list:
             cat_list.append("tls")
         if not quiet:
-            console.print(f"[bold cyan]🔐 TLS SCAN: {tls_host}[/]")
-            console.print()
+            _print_header("TLS Scan", tls_host, border_style="cyan")
 
     # Run scan
     audit = TIBETAudit(sovereign_mode=sovereign)
@@ -293,6 +285,7 @@ def scan(
     # ── Compliance / JIS export modes ──────────────────────────────────
     if compliance or compliance_output or jis_export:
         from .compliance_map import get_framework_coverage, generate_jis_compliance_block, FRAMEWORKS
+        from .governance_conclusion import build_governance_conclusion
 
         if jis_export:
             # Export jis.json compliance block
@@ -308,11 +301,13 @@ def scan(
 
         if compliance_output:
             # Export full compliance report
+            governance_conclusion = build_governance_conclusion(result, result.scan_path)
             report = {
                 "scanner": "tibet-audit",
                 "version": __version__,
                 "score": result.score,
                 "grade": result.grade,
+                "governance_conclusion": governance_conclusion,
                 "frameworks": {},
             }
             for fw_key, cov in coverage.items():
@@ -332,6 +327,7 @@ def scan(
 
         if compliance:
             # Print compliance coverage matrix to terminal
+            governance_conclusion = build_governance_conclusion(result, result.scan_path)
             console.print()
             console.print(Panel(
                 f"[bold]Compliance Coverage Matrix[/]\n"
@@ -368,6 +364,38 @@ def scan(
                 )
 
             console.print(table)
+
+            console.print()
+            lane_summary = governance_conclusion.get("operational_lane_summary", {})
+            lane_classes = lane_summary.get("lane_classes", {})
+            collision = lane_summary.get("lane_collision_policies", {})
+            coffee = lane_summary.get("coffee_lane_policies", {})
+            emitters = lane_summary.get("emitters", {})
+            if lane_summary.get("event_count"):
+                console.print(Panel(
+                    "\n".join([
+                        f"[bold]Observed events:[/] {lane_summary['event_count']}",
+                        f"[bold]Lane classes:[/] {', '.join(f'{k}={v}' for k, v in lane_classes.items()) or '-'}",
+                        f"[bold]Collision:[/] {', '.join(f'{k}={v}' for k, v in collision.items()) or '-'}",
+                        f"[bold]Coffee:[/] {', '.join(f'{k}={v}' for k, v in coffee.items()) or '-'}",
+                        f"[bold]Emitters:[/] {', '.join(f'{k}={v}' for k, v in emitters.items()) or '-'}",
+                    ]),
+                    title="[bold blue]Operational Lane Summary[/]",
+                    border_style="blue",
+                ))
+                console.print()
+            console.print(Panel(
+                "\n".join([
+                    f"[bold]Profile:[/] {governance_conclusion['governance_profile']}",
+                    f"[bold]Confidence:[/] {governance_conclusion['overall_governance_confidence']}",
+                    f"[bold]WHAT:[/] {governance_conclusion['what_status']}   "
+                    f"[bold]HOW:[/] {governance_conclusion['how_status']}   "
+                    f"[bold]WHO:[/] {governance_conclusion['who_status']}   "
+                    f"[bold]WHY:[/] {governance_conclusion['why_status']}",
+                ]),
+                title="[bold magenta]Governance Conclusion[/]",
+                border_style="magenta",
+            ))
 
             # Per-framework clause detail (collapsed)
             for fw_key, cov in sorted_fw:
@@ -407,11 +435,16 @@ def scan(
             output_path=out_file,
             fmt=auditor_format,
         )
+        governance_conclusion = build_governance_conclusion(result, result.scan_path)
         if not quiet:
             console.print(f"\n[bold]Auditor Export: {out_file}[/]")
             console.print(f"  Format: {auditor_format.upper()}")
             console.print(f"  Findings: {len(result.results)} ({result.passed} compliant, {result.failed} non-compliant, {result.warnings} needs review)")
             console.print(f"  Score: {result.score}/100 (Grade {result.grade})")
+            console.print(
+                f"  Governance: {governance_conclusion['governance_profile']} "
+                f"({governance_conclusion['overall_governance_confidence']})"
+            )
         else:
             # Quiet mode: just dump to stdout
             print(output_str)
@@ -539,13 +572,13 @@ def template(
 @app.command()
 def fix(
     path: str = typer.Argument(".", help="Path to scan and fix"),
-    auto: bool = typer.Option(False, "--auto", "-a", help="🍼 Diaper Protocol: fix everything, no questions"),
-    wet_wipe: bool = typer.Option(False, "--wet-wipe", "-w", help="Preview what would be fixed (like --dry-run but funnier)"),
+    auto: bool = typer.Option(False, "--auto", "-a", help="Apply all available fixes without prompts"),
+    wet_wipe: bool = typer.Option(False, "--wet-wipe", "-w", help="Preview fixes without changing files"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Same as --wet-wipe"),
-    require_signoff: bool = typer.Option(False, "--require-signoff", "-s", help="⚖️ Require human sign-off before RESOLVED state"),
+    require_signoff: bool = typer.Option(False, "--require-signoff", "-s", help="Require human sign-off before RESOLVED state"),
     reviewer: Optional[str] = typer.Option(None, "--reviewer", "-r", help="Reviewer name for sign-off (e.g., 'Eva de Vries, Jurist')"),
     reviewer_did: Optional[str] = typer.Option(None, "--reviewer-did", help="Reviewer DID (e.g., 'jis:jurist:eva.devries')"),
-    sovereign: bool = typer.Option(False, "--sovereign", help="🏴 Sovereign mode: no cloud APIs, fully local"),
+    sovereign: bool = typer.Option(False, "--sovereign", help="Sovereign mode: no cloud APIs, fully local"),
 ):
     """
     Fix compliance issues automatically.
@@ -568,14 +601,24 @@ def fix(
     preview_only = wet_wipe or dry_run
 
     if auto and not preview_only:
-        console.print(DIAPER_BANNER)
+        _print_header(
+            "Diaper Protocol Activated",
+            '"Press the button, hands free, diaper change, server fixed."',
+            border_style="yellow",
+        )
     else:
-        console.print(BANNER.format(version=__version__))
+        _print_header(
+            f"TIBET Audit v{__version__}",
+            'Compliance Health Scanner. "SSL secures the connection. TIBET secures the timeline. JIS verifies the intent."',
+            border_style="blue",
+        )
 
     if sovereign:
-        console.print("[bold cyan]🏴 SOVEREIGN MODE[/]")
-        console.print("[dim]   All operations run locally. No data leaves your machine.[/]")
-        console.print()
+        _print_header(
+            "Sovereign Mode",
+            "All operations run locally. No data leaves your machine.",
+            border_style="cyan",
+        )
         import os
         os.environ["TIBET_SOVEREIGN_MODE"] = "1"
 
@@ -594,7 +637,7 @@ def fix(
     fixable = audit.get_fixable_issues(result.results)
 
     if not fixable:
-        console.print("[green]✅ No fixable issues found! Your compliance is looking good.[/]")
+        console.print("[green]No fixable issues found. Current scan state looks good.[/]")
         return
 
     console.print(f"\n[bold]Found {len(fixable)} fixable issue(s):[/]\n")
@@ -610,13 +653,13 @@ def fix(
         console.print()
 
     if preview_only:
-        console.print("[yellow]🧻 Wet-wipe mode: No changes made. Run without --wet-wipe to apply fixes.[/]")
+        console.print("[yellow]Preview mode: no changes made. Run without --wet-wipe to apply fixes.[/]")
         return
 
     fixed_count = 0
     if auto:
         # Diaper Protocol: just do it
-        console.print("[bold yellow]🍼 Diaper Protocol: Applying all fixes...[/]\n")
+        console.print("[bold yellow]Applying all fixes...[/]\n")
         fixed_count = _apply_fixes(fixable)
     else:
         # Interactive mode
@@ -706,7 +749,7 @@ def _apply_fixes(issues: List) -> int:
             failed += 1
 
     console.print()
-    console.print(f"[bold green]🎉 Done! Fixed: {fixed}, Failed: {failed}[/]")
+    console.print(f"[bold green]Fix run complete. Fixed: {fixed}, Failed: {failed}[/]")
     console.print()
     console.print("[dim]Run 'tibet-audit scan' to verify improvements.[/]")
     return fixed
@@ -717,9 +760,11 @@ def _create_signoff_request(result, fixed_count: int, reviewer: Optional[str], r
     from .signoff import SignoffManager, create_signoff_prompt
 
     console.print()
-    console.print("[bold cyan]⚖️  SIGN-OFF REQUIRED[/]")
-    console.print("[dim]\"TIBET prepares, Human verifies, JIS seals.\"[/]")
-    console.print()
+    _print_header(
+        "Sign-off Required",
+        "TIBET prepares, human verifies, JIS seals.",
+        border_style="cyan",
+    )
 
     manager = SignoffManager()
     record = manager.create_signoff_request(
@@ -754,7 +799,11 @@ def list_checks(
     category: Optional[str] = typer.Option(None, "--category", "-c", help="Filter by category"),
 ):
     """List all available compliance checks."""
-    console.print(BANNER.format(version=__version__))
+    _print_header(
+        f"TIBET Audit v{__version__}",
+        'Compliance Health Scanner. "SSL secures the connection. TIBET secures the timeline. JIS verifies the intent."',
+        border_style="blue",
+    )
 
     from .checks import ALL_CHECKS
 
@@ -820,7 +869,11 @@ def call_mama(
         tibet-audit call-mama --send --contact me@co.com --company "Acme Inc"
         tibet-audit call-mama --output report.json
     """
-    console.print(CALL_MAMA_BANNER)
+    _print_header(
+        "Calling M.A.M.A.",
+        "Mission Assurance & Monitoring Agent. When the diaper is too dirty, you call for backup.",
+        border_style="red",
+    )
 
     # Run scan
     with Progress(
@@ -1275,7 +1328,11 @@ def eu_pack(
     from .exporters.soc2 import export_to_soc2
 
     if not quiet:
-        console.print(BANNER.format(version=__version__))
+        _print_header(
+            f"TIBET Audit v{__version__}",
+            'Compliance Health Scanner. "SSL secures the connection. TIBET secures the timeline. JIS verifies the intent."',
+            border_style="blue",
+        )
         console.print("[bold blue]🇪🇺 EU COMPLIANCE PACK[/]")
         console.print("[dim]GDPR + AI Act + NIS2 - Everything you need for the EU market[/]\n")
 
@@ -1667,7 +1724,7 @@ def _display_results(result: ScanResult, quiet: bool = False, verbose: bool = Fa
 
     score_panel = Panel(
         f"[bold {score_color}]{result.score}/100[/]  [dim]Grade: {result.grade}[/]",
-        title="[bold]COMPLIANCE HEALTH SCORE[/]",
+        title="[bold]Compliance Score[/]",
         border_style=score_color,
         padding=(1, 4),
     )
@@ -1684,7 +1741,7 @@ def _display_results(result: ScanResult, quiet: bool = False, verbose: bool = Fa
 
     # In cry mode, show EVERYTHING
     if verbose:
-        console.print("[bold]😭 FULL BREAKDOWN (cry mode):[/]\n")
+        console.print("[bold]Full Breakdown:[/]\n")
 
         # Show all passed checks too
         passed = [r for r in result.results if r.status == Status.PASSED]
@@ -1748,14 +1805,6 @@ def _display_results(result: ScanResult, quiet: bool = False, verbose: bool = Fa
 # CHECKPOINT CODE - Cross-Border Compliance
 # ═══════════════════════════════════════════════════════════════════════════════
 
-CHECKPOINT_BANNER = """
-[bold yellow]══════════════════════════════════════════════════════════════════════════════[/]
-[bold yellow]  🚧 CHECKPOINT CODE[/]
-[dim]  "Passports checked. Math matches. You may proceed."[/]
-[bold yellow]══════════════════════════════════════════════════════════════════════════════[/]
-"""
-
-
 @app.command("checkpoint")
 def checkpoint(
     path: str = typer.Argument(".", help="Path to scan"),
@@ -1777,7 +1826,11 @@ def checkpoint(
     """
     from .checkpoint import checkpoint_scan, Jurisdiction
 
-    console.print(CHECKPOINT_BANNER)
+    _print_header(
+        "Checkpoint Code",
+        '"Passports checked. Math matches. You may proceed."',
+        border_style="yellow",
+    )
 
     # Run McMurdo check first
     console.print("[bold cyan]🏔️  McMurdo Base: Pre-flight check...[/]")
@@ -1854,8 +1907,11 @@ def checkpoint_matrix(
     """
     from .checkpoint import cross_checkpoint, Jurisdiction
 
-    console.print(CHECKPOINT_BANNER)
-    console.print("[bold]🌍 CHECKPOINT MATRIX - All Border Crossings[/]\n")
+    _print_header(
+        "Checkpoint Matrix",
+        "All border crossings",
+        border_style="yellow",
+    )
 
     jurisdictions = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.JP, Jurisdiction.ZA]
 
@@ -1892,13 +1948,6 @@ def checkpoint_matrix(
 # SIGN-OFF COMMANDS (Jurist Verification)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SIGNOFF_BANNER = """
-[bold cyan]══════════════════════════════════════════════════════════════════════════════[/]
-[bold cyan]  ⚖️  TIBET SIGN-OFF - Human Verification with JIS Bilateral Consent[/]
-[dim]  "TIBET prepares, Human verifies, JIS seals."[/]
-[bold cyan]══════════════════════════════════════════════════════════════════════════════[/]
-"""
-
 signoff_app = typer.Typer(
     name="signoff",
     help="Manage sign-off requests for compliance verification",
@@ -1912,7 +1961,11 @@ def signoff_list():
     """List all pending sign-off requests."""
     from .signoff import SignoffManager, SignoffState
 
-    console.print(SIGNOFF_BANNER)
+    _print_header(
+        "TIBET Sign-off",
+        "Human verification with JIS bilateral consent.\nTIBET prepares, human verifies, JIS seals.",
+        border_style="cyan",
+    )
 
     manager = SignoffManager()
     pending = manager.list_pending()
@@ -1965,7 +2018,11 @@ def signoff_show(signoff_id: str = typer.Argument(..., help="Sign-off ID")):
         console.print(f"[red]❌ Sign-off {signoff_id} not found[/]")
         raise typer.Exit(1)
 
-    console.print(SIGNOFF_BANNER)
+    _print_header(
+        "TIBET Sign-off",
+        "Human verification with JIS bilateral consent.",
+        border_style="cyan",
+    )
 
     if record.state == SignoffState.JIS_SEALED:
         console.print(format_sealed_certificate(record))
@@ -1988,7 +2045,11 @@ def signoff_approve(
     """Approve a compliance assessment (human verification step)."""
     from .signoff import SignoffManager, SignoffState
 
-    console.print(SIGNOFF_BANNER)
+    _print_header(
+        "TIBET Sign-off",
+        "Human verification with JIS bilateral consent.",
+        border_style="cyan",
+    )
 
     manager = SignoffManager()
     record = manager.get_record(signoff_id)
@@ -2026,7 +2087,11 @@ def signoff_reject(
     """Reject a compliance assessment."""
     from .signoff import SignoffManager
 
-    console.print(SIGNOFF_BANNER)
+    _print_header(
+        "TIBET Sign-off",
+        "Human verification with JIS bilateral consent.",
+        border_style="cyan",
+    )
 
     manager = SignoffManager()
 
@@ -2046,7 +2111,11 @@ def signoff_seal(signoff_id: str = typer.Argument(..., help="Sign-off ID")):
     """Cryptographically seal an approved sign-off with JIS bilateral consent."""
     from .signoff import SignoffManager, format_sealed_certificate, SignoffState
 
-    console.print(SIGNOFF_BANNER)
+    _print_header(
+        "TIBET Sign-off",
+        "Human verification with JIS bilateral consent.",
+        border_style="cyan",
+    )
 
     manager = SignoffManager()
     record = manager.get_record(signoff_id)
@@ -2064,7 +2133,7 @@ def signoff_seal(signoff_id: str = typer.Argument(..., help="Sign-off ID")):
 
     try:
         record = manager.seal_with_jis(signoff_id)
-        console.print("[bold green]🔐 JIS SEALED![/]")
+        console.print("[bold green]JIS Sealed[/]")
         console.print()
         console.print(format_sealed_certificate(record))
         console.print("[bold green]✅ Compliance assessment is now cryptographically verified.[/]")
@@ -2080,7 +2149,11 @@ def signoff_stats():
     """Show sign-off statistics (for tibet-pol integration)."""
     from .signoff import SignoffManager, SignoffState
 
-    console.print(SIGNOFF_BANNER)
+    _print_header(
+        "TIBET Sign-off",
+        "Human verification with JIS bilateral consent.",
+        border_style="cyan",
+    )
 
     manager = SignoffManager()
     counts = manager.count_by_state()
@@ -2123,10 +2196,372 @@ def signoff_stats():
 # STATUS DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _print_evidence_table(snapshot: dict, title: str = "Evidence Sources") -> None:
+    table = Table(title=title, box=box.SIMPLE_HEAVY)
+    table.add_column("Source", style="bold")
+    table.add_column("Kind", width=8)
+    table.add_column("Records", justify="right", width=10)
+    table.add_column("Latest", overflow="fold")
+    table.add_column("Path", overflow="fold")
+
+    sources = snapshot.get("evidence_sources", [])
+    if not sources:
+        table.add_row("none", "-", "0", "-", "No local evidence files found")
+    for source in sources:
+        status_style = "green" if source["records"] else "dim"
+        table.add_row(
+            f"[{status_style}]{source['name']}[/]",
+            source["kind"],
+            str(source["records"]),
+            source.get("latest_ts") or "-",
+            source["path"],
+        )
+    console.print(table)
+
+
+def _print_component_table(snapshot: dict) -> None:
+    table = Table(title="Runtime Components", box=box.SIMPLE_HEAVY)
+    table.add_column("Group", width=10)
+    table.add_column("Component")
+    table.add_column("Kind", width=8)
+    table.add_column("Status", width=12)
+    table.add_column("Version / Path", overflow="fold")
+
+    for component in snapshot.get("components", []):
+        status = component["status"]
+        style = "green" if status in {"installed", "available"} else "yellow"
+        detail = component.get("version") or component.get("path") or "-"
+        table.add_row(
+            component["group"],
+            component["name"],
+            component["kind"],
+            f"[{style}]{status}[/]",
+            detail,
+        )
+    console.print(table)
+
+
+def _print_readiness_table(snapshot: dict) -> None:
+    table = Table(title="Operational Readiness", box=box.SIMPLE_HEAVY)
+    table.add_column("Lane", style="bold")
+    table.add_column("Status", width=10)
+    table.add_column("Observed", overflow="fold")
+    table.add_column("Reason", overflow="fold")
+
+    style_map = {
+        "ready": "green",
+        "active": "green",
+        "partial": "yellow",
+        "baseline": "cyan",
+        "missing": "red",
+    }
+    for lane in snapshot.get("readiness_lanes", []):
+        status = lane["status"]
+        style = style_map.get(status, "white")
+        observed = ", ".join(lane.get("observed", [])) or "-"
+        table.add_row(lane["name"], f"[{style}]{status}[/]", observed, lane["reason"])
+    console.print(table)
+
+
+def _print_adapter_table(snapshot: dict) -> None:
+    table = Table(title="Evidence Adapters", box=box.SIMPLE_HEAVY)
+    table.add_column("Adapter", style="bold")
+    table.add_column("Status", width=10)
+    table.add_column("Records", justify="right", width=8)
+    table.add_column("Summary", overflow="fold")
+    table.add_column("Source", overflow="fold")
+
+    style_map = {
+        "ready": "green",
+        "active": "green",
+        "observed": "cyan",
+        "attention": "yellow",
+        "unknown": "dim",
+    }
+    assessments = snapshot.get("adapter_assessments", [])
+    if not assessments:
+        table.add_row("none", "-", "0", "No typed evidence adapters matched", "-")
+    for assessment in assessments:
+        status = assessment["status"]
+        style = style_map.get(status, "white")
+        table.add_row(
+            assessment["adapter"],
+            f"[{style}]{status}[/]",
+            str(assessment["records"]),
+            assessment["summary"],
+            assessment["source"],
+        )
+    console.print(table)
+
+
+def _print_chain_table(snapshot: dict) -> None:
+    table = Table(title="Evidence Chains", box=box.SIMPLE_HEAVY)
+    table.add_column("Chain", style="bold", overflow="fold")
+    table.add_column("Status", width=10)
+    table.add_column("Steps", justify="right", width=7)
+    table.add_column("Story", overflow="fold")
+    table.add_column("Missing", overflow="fold")
+
+    style_map = {"complete": "green", "partial": "yellow", "missing": "red"}
+    chains = snapshot.get("evidence_chains", [])
+    if not chains:
+        table.add_row("none", "-", "0", "No correlated evidence chains found", "-")
+    for chain in chains:
+        status = chain["status"]
+        style = style_map.get(status, "white")
+        story = " -> ".join(f"{step['subsystem']}:{step['action']}" for step in chain.get("steps", []))
+        missing = ", ".join(chain.get("missing_links", [])) or "-"
+        table.add_row(chain["title"], f"[{style}]{status}[/]", str(len(chain.get("steps", []))), story, missing)
+    console.print(table)
+
+
+def _print_posture_panel(snapshot: dict) -> None:
+    posture = snapshot.get("posture_summary", {})
+    switches = posture.get("active_switches", [])
+    lines = [
+        f"[bold]Current posture:[/] {posture.get('current_posture', 'unknown')}",
+        f"[bold]Transitions:[/] {len(posture.get('transitions', []))}",
+        f"[bold]External AI inbound denied:[/] {posture.get('deny_external_ai_inbound', False)}",
+        f"[bold]Airlock marker required:[/] {posture.get('require_airlock_marker_on_tokens', False)}",
+        f"[bold]Quarantine events:[/] {posture.get('quarantine_events', 0)}",
+        f"[bold]Switches:[/] {', '.join(switches) if switches else '-'}",
+    ]
+    console.print(Panel("\n".join(lines), title="Posture Summary", border_style="yellow"))
+
+
+def _render_ops_report_markdown(snapshot: dict) -> str:
+    summary = snapshot["summary"]
+    posture = snapshot.get("posture_summary", {})
+    lines = [
+        "# TIBET Audit Ops Report",
+        "",
+        f"- Path: `{snapshot['path']}`",
+        f"- Posture: `{snapshot['posture']}`",
+        f"- Evidence sources: {summary['active_evidence_sources']}/{summary['evidence_sources']} active",
+        f"- Latest events indexed: {summary['latest_events']}",
+        f"- Warnings: {summary['warnings']}",
+        "",
+        "## Posture",
+        "",
+        f"- Current posture: `{posture.get('current_posture', 'unknown')}`",
+        f"- External AI inbound denied: `{posture.get('deny_external_ai_inbound', False)}`",
+        f"- Airlock marker required: `{posture.get('require_airlock_marker_on_tokens', False)}`",
+        f"- Quarantine events: `{posture.get('quarantine_events', 0)}`",
+        "",
+        "## Readiness Lanes",
+        "",
+        "| Lane | Status | Observed | Reason |",
+        "|---|---:|---|---|",
+    ]
+    for lane in snapshot.get("readiness_lanes", []):
+        observed = ", ".join(lane.get("observed", [])) or "-"
+        lines.append(f"| {lane['name']} | `{lane['status']}` | {observed} | {lane['reason']} |")
+
+    lines.extend(["", "## Evidence Sources", "", "| Source | Kind | Records | Latest |", "|---|---:|---:|---|"])
+    for source in snapshot.get("evidence_sources", []):
+        lines.append(f"| `{source['name']}` | {source['kind']} | {source['records']} | {source.get('latest_ts') or '-'} |")
+
+    lines.extend(["", "## Evidence Adapters", "", "| Adapter | Status | Records | Summary |", "|---|---:|---:|---|"])
+    for assessment in snapshot.get("adapter_assessments", []):
+        lines.append(
+            f"| {assessment['adapter']} | `{assessment['status']}` | {assessment['records']} | {assessment['summary']} |"
+        )
+
+    lines.extend(["", "## Evidence Chains", "", "| Chain | Status | Steps | Missing |", "|---|---:|---:|---|"])
+    for chain in snapshot.get("evidence_chains", []):
+        missing = ", ".join(chain.get("missing_links", [])) or "-"
+        lines.append(f"| {chain['title']} | `{chain['status']}` | {len(chain.get('steps', []))} | {missing} |")
+        for step in chain.get("steps", []):
+            lines.append(f"| - {step['subsystem']} | `{step['severity']}` | {step['action']} | {step['summary']} |")
+
+    lines.extend(["", "## Latest Findings", "", "| Severity | Message | Source |", "|---|---|---|"])
+    for finding in snapshot.get("findings", []):
+        lines.append(f"| `{finding['severity']}` | {finding['message']} | `{finding['source']}` |")
+
+    if snapshot.get("next_actions"):
+        lines.extend(["", "## Next Actions", ""])
+        lines.extend(f"- {action}" for action in snapshot["next_actions"])
+
+    return "\n".join(lines) + "\n"
+
+
+def _resolve_tail_source(path: str, source: Optional[str], include_system: bool) -> Optional[str]:
+    if source:
+        source_path = Path(source)
+        if source_path.exists():
+            return str(source_path)
+        sources = discover_evidence_sources(path, include_system=include_system)
+        for candidate in sources:
+            if candidate.name == source or candidate.path.endswith(source):
+                return candidate.path
+        return source
+
+    sources = [
+        candidate for candidate in discover_evidence_sources(path, include_system=include_system)
+        if candidate.kind == "jsonl" and candidate.records > 0
+    ]
+    if not sources:
+        return None
+    sources.sort(key=lambda item: (item.latest_ts or "", item.records), reverse=True)
+    return sources[0].path
+
+
+@app.command("evidence")
+def evidence_index(
+    path: str = typer.Argument(".", help="Path to inspect"),
+    output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+    system: bool = typer.Option(False, "--system", help="Also inspect /var/log/tibet, /var/lib/tibet and root trust dirs"),
+):
+    """
+    Index local evidence files that can feed the audit conclusion layer.
+    """
+    snapshot = build_cockpit_snapshot(path, include_system=system, lines=1)
+    if output.lower() == "json":
+        console.print(json.dumps({
+            "path": snapshot["path"],
+            "posture": snapshot["posture"],
+            "summary": snapshot["summary"],
+            "evidence_sources": snapshot["evidence_sources"],
+        }, indent=2))
+        return
+
+    _print_header("TIBET Evidence Index", "Local runtime evidence available to tibet-audit.", "cyan")
+    _print_evidence_table(snapshot)
+
+
+@app.command("tail")
+def tail_evidence(
+    path: str = typer.Argument(".", help="Path to inspect"),
+    source: Optional[str] = typer.Option(None, "--source", "-s", help="Evidence file name or path"),
+    lines: int = typer.Option(25, "--lines", "-n", min=1, max=500, help="Number of records to show"),
+    output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+    system: bool = typer.Option(False, "--system", help="Also inspect /var/log/tibet, /var/lib/tibet and root trust dirs"),
+):
+    """
+    Show the latest JSONL evidence records in a compact audit view.
+    """
+    resolved = _resolve_tail_source(path, source, include_system=system)
+    if not resolved:
+        if output.lower() == "json":
+            console.print(json.dumps({"events": [], "source": None}, indent=2))
+            return
+        _print_header("TIBET Evidence Tail", "No active JSONL evidence source found.", "yellow")
+        return
+
+    events = load_tail_events(resolved, lines=lines)
+    if output.lower() == "json":
+        console.print(json.dumps({"source": resolved, "events": events}, indent=2))
+        return
+
+    _print_header("TIBET Evidence Tail", resolved, "cyan")
+    table = Table(box=box.SIMPLE_HEAVY)
+    table.add_column("#", justify="right", width=4)
+    table.add_column("Severity", width=10)
+    table.add_column("Event", overflow="fold")
+    table.add_column("Actor / Object", overflow="fold")
+    for idx, event in enumerate(events, 1):
+        finding = classify_event(event)
+        style = {"warning": "yellow", "ok": "green", "info": "cyan"}.get(finding.severity, "white")
+        actor = event.get("actor_id") or event.get("object_id") or event.get("event_id") or "-"
+        table.add_row(str(idx), f"[{style}]{finding.severity}[/]", finding.message, str(actor))
+    console.print(table)
+
+
+@app.command("cockpit")
+def cockpit_dashboard(
+    path: str = typer.Argument(".", help="Path to inspect"),
+    lines: int = typer.Option(20, "--lines", "-n", min=1, max=100, help="Latest evidence records to include"),
+    output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+    system: bool = typer.Option(False, "--system", help="Also inspect /var/log/tibet, /var/lib/tibet and root trust dirs"),
+):
+    """
+    Dual-pane operational cockpit for audit evidence and runtime posture.
+    """
+    snapshot = build_cockpit_snapshot(path, include_system=system, lines=lines)
+    if output.lower() == "json":
+        console.print(json.dumps(snapshot, indent=2))
+        return
+
+    summary = snapshot["summary"]
+    subtitle = (
+        f"Posture: {snapshot['posture']} | "
+        f"Evidence: {summary['active_evidence_sources']}/{summary['evidence_sources']} active | "
+        f"Warnings: {summary['warnings']}"
+    )
+    _print_header("TIBET Audit Cockpit", subtitle, "cyan")
+
+    from rich.columns import Columns
+    from rich.panel import Panel as RichPanel
+
+    left = Table(box=box.SIMPLE)
+    left.add_column("Source")
+    left.add_column("Records", justify="right")
+    for source_row in snapshot.get("evidence_sources", [])[:12]:
+        left.add_row(source_row["name"], str(source_row["records"]))
+    if not snapshot.get("evidence_sources"):
+        left.add_row("none", "0")
+
+    right = Table(box=box.SIMPLE)
+    right.add_column("Finding")
+    right.add_column("Source")
+    for finding in snapshot.get("findings", [])[-12:]:
+        right.add_row(finding["message"], finding["source"])
+    if not snapshot.get("findings"):
+        right.add_row("No JSONL findings yet", "-")
+
+    console.print(Columns([
+        RichPanel(left, title="Evidence Sources", border_style="blue"),
+        RichPanel(right, title="Latest Findings", border_style="magenta"),
+    ], equal=True, expand=True))
+    console.print()
+    _print_posture_panel(snapshot)
+    console.print()
+    _print_adapter_table(snapshot)
+    console.print()
+    _print_chain_table(snapshot)
+    console.print()
+    _print_readiness_table(snapshot)
+    if snapshot.get("next_actions"):
+        console.print()
+        actions = "\n".join(f"- {action}" for action in snapshot["next_actions"])
+        console.print(Panel(actions, title="Next Actions", border_style="yellow"))
+    console.print()
+    _print_component_table(snapshot)
+
+
+@app.command("ops-report")
+def ops_report(
+    path: str = typer.Argument(".", help="Path to inspect"),
+    output_path: Optional[str] = typer.Option(None, "--out", help="Write report to this path"),
+    format: str = typer.Option("markdown", "--format", "-f", help="Output: markdown, json"),
+    lines: int = typer.Option(50, "--lines", "-n", min=1, max=500, help="Latest evidence records to include"),
+    system: bool = typer.Option(False, "--system", help="Also inspect /var/log/tibet, /var/lib/tibet and root trust dirs"),
+):
+    """
+    Export an operator-grade audit report from runtime evidence.
+    """
+    snapshot = build_cockpit_snapshot(path, include_system=system, lines=lines)
+    fmt = format.lower()
+    if fmt == "json":
+        rendered = json.dumps(snapshot, indent=2)
+    elif fmt in {"markdown", "md"}:
+        rendered = _render_ops_report_markdown(snapshot)
+    else:
+        console.print(f"[red]Unsupported format: {format}[/]")
+        raise typer.Exit(1)
+
+    if output_path:
+        Path(output_path).write_text(rendered, encoding="utf-8")
+        console.print(f"[green]Ops report written:[/] {output_path}")
+        return
+    console.print(rendered)
+
+
 @app.command("status")
 def status_dashboard(
     path: str = typer.Argument(".", help="Path to scan"),
     output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+    system: bool = typer.Option(False, "--system", help="Also inspect /var/log/tibet, /var/lib/tibet and root trust dirs"),
 ):
     """
     TIBET Status Dashboard — One-glance compliance overview.
@@ -2145,10 +2580,11 @@ def status_dashboard(
     import time
 
     if output.lower() != "json":
-        console.print()
-        console.print("[bold cyan]TIBET STATUS DASHBOARD[/]")
-        console.print("[cyan]" + "=" * 50 + "[/]")
-        console.print()
+        _print_header(
+            "TIBET Status Dashboard",
+            "One-glance compliance overview.",
+            border_style="cyan",
+        )
 
     # 1. Detect installed packages
     installed = _detect_installed_packages()
@@ -2177,6 +2613,7 @@ def status_dashboard(
         1 for r in scan_result.results
         if r.status == Status.FAILED and r.severity in (Severity.CRITICAL, Severity.HIGH)
     )
+    cockpit_snapshot = build_cockpit_snapshot(path, include_system=system, lines=10)
 
     if output.lower() == "json":
         import json as json_mod
@@ -2186,6 +2623,7 @@ def status_dashboard(
                 "grade": scan_result.grade,
                 "tier": tier,
                 "compliance_pct": compliance_pct,
+                "posture": cockpit_snapshot["posture"],
             },
             "packages": {
                 "installed_count": len(installed),
@@ -2205,6 +2643,16 @@ def status_dashboard(
                 "critical_failures": failed_critical,
                 "fixable": scan_result.fixable_count,
                 "duration_seconds": scan_duration,
+            },
+            "runtime": {
+                "summary": cockpit_snapshot["summary"],
+                "evidence_sources": cockpit_snapshot["evidence_sources"],
+                "findings": cockpit_snapshot["findings"],
+                "adapter_assessments": cockpit_snapshot["adapter_assessments"],
+                "evidence_chains": cockpit_snapshot["evidence_chains"],
+                "posture_summary": cockpit_snapshot["posture_summary"],
+                "readiness_lanes": cockpit_snapshot["readiness_lanes"],
+                "next_actions": cockpit_snapshot["next_actions"],
             },
             "recommendations": [
                 {
@@ -2226,6 +2674,7 @@ def status_dashboard(
     # Score + Grade
     console.print(f"  Score:   [{score_color}]{scan_result.score}/100[/] (Grade {scan_result.grade})")
     console.print(f"  Tier:    [bold]{tier.upper()}[/] ({len(installed)} packages, {compliance_pct}% coverage)")
+    console.print(f"  Posture: [bold]{cockpit_snapshot['posture']}[/]")
     console.print()
 
     # Checks summary
@@ -2247,6 +2696,28 @@ def status_dashboard(
     console.print(f"  {'[green]OK[/]' if has_audit else '[red]MISSING[/]'}  Compliance (tibet-audit)")
     console.print(f"  {'[green]OK[/]' if has_identity else '[red]MISSING[/]'}  Identity (jis-core, idd-cli)")
     console.print(f"  {'[green]OK[/]' if has_local_ai else '[dim]N/A[/]'}  Local AI (oomllama, sensory)")
+    console.print()
+
+    summary = cockpit_snapshot["summary"]
+    console.print("[bold]Operational Evidence:[/]")
+    console.print(f"  Sources:  {summary['active_evidence_sources']}/{summary['evidence_sources']} active")
+    console.print(f"  Events:   {summary['latest_events']} latest indexed")
+    console.print(f"  Warnings: {summary['warnings']}")
+    console.print()
+    if cockpit_snapshot.get("evidence_sources"):
+        _print_evidence_table(cockpit_snapshot, title="Evidence Sources")
+        console.print()
+    _print_posture_panel(cockpit_snapshot)
+    console.print()
+    _print_adapter_table(cockpit_snapshot)
+    console.print()
+    _print_chain_table(cockpit_snapshot)
+    console.print()
+    _print_readiness_table(cockpit_snapshot)
+    if cockpit_snapshot.get("next_actions"):
+        console.print()
+        actions = "\n".join(f"- {action}" for action in cockpit_snapshot["next_actions"])
+        console.print(Panel(actions, title="Next Actions", border_style="yellow"))
     console.print()
 
     # Top 3 failed checks with TIBET recommendations
