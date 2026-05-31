@@ -41,6 +41,7 @@ from .cockpit import (
     discover_evidence_sources,
     load_tail_events,
 )
+from .genesis import assess_genesis_events, is_genesis_event
 
 # Framework imports
 try:
@@ -1229,6 +1230,97 @@ def _display_tibet_token(token: dict):
     console.print(f"[bold blue]║[/] TIMESTAMP: [dim]{str(timestamp)[:52]:<52}[/] [bold blue]║[/]")
     console.print("[bold blue]╚══════════════════════════════════════════════════════════════════╝[/]")
     console.print()
+
+
+@app.command()
+def genesis(
+    source: str = typer.Argument(..., help="Path to JSONL log of tibet.genesis.t-1.v1 events"),
+    output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+):
+    """
+    T-1 Genesis audit — read pre-grant genesis-event records and report
+    ready/blocked/forked status per tool_id.
+
+    Codex' spec (2026-05-31): tibet-audit acts as blackbox recorder + validator
+    over the real genesis pass. The enforcement layer lives in
+    trust-kernel/airlock/capability-grant; this command only reads what the
+    enforcement layer emitted and tells the operator whether each pre-grant
+    candidate is safe to merge into T0.
+
+    Contract: tibet.genesis.t-1.v1 (see T1_GENESIS_M4_PREGRANT_SPEC.md)
+    Required fields per record: tool_id, schema_hash, description_hash,
+    allowed_tools_hash, endpoint_hash, registry_source, retrieved_at,
+    retriever_identity, magic_bytes, tibet_token, jis_claim, airlock_verdict,
+    fork_id, merge_to_t0_verdict.
+
+    Status codes:
+        absent     → no genesis events found in source
+        observed   → events present but no ready/blocked/forked yet
+        ready      → at least one candidate cleared merge_to_t0_verdict=ready
+        attention  → blocked or forked candidates require operator action
+    """
+    from pathlib import Path
+    src = Path(source)
+    if not src.exists():
+        console.print(f"[red]tibet-audit: no genesis source at {src}[/]")
+        raise typer.Exit(code=3)
+
+    records: list[dict] = []
+    for line in src.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    assessment = assess_genesis_events(records)
+
+    if output.lower() == "json":
+        console.print(json.dumps(assessment, indent=2, ensure_ascii=False))
+        return
+
+    status = assessment["status"]
+    status_color = {
+        "ready": "green",
+        "observed": "cyan",
+        "attention": "yellow",
+        "absent": "dim",
+    }.get(status, "white")
+
+    console.print(Panel(
+        f"[bold]T-1 Genesis assessment[/]\n"
+        f"  source: {src}\n"
+        f"  contract: tibet.genesis.t-1.v1",
+        border_style=status_color,
+    ))
+    console.print(f"  status:          [{status_color}]{status}[/]")
+    console.print(f"  candidates seen: {assessment['candidate_count']}")
+    console.print(f"  ready:           [green]{assessment['ready_count']}[/]")
+    console.print(f"  blocked:         [yellow]{assessment['blocked_count']}[/]")
+    console.print(f"  forked:          [yellow]{assessment['forked_count']}[/]")
+
+    if assessment["findings"]:
+        t = Table(title="Per-candidate findings", box=box.SIMPLE_HEAVY)
+        t.add_column("Severity", width=10)
+        t.add_column("Tool ID", overflow="fold")
+        t.add_column("Event", width=18)
+        t.add_column("Message", overflow="fold")
+        for f in assessment["findings"]:
+            sev = f["severity"]
+            sev_style = {"ok": "green", "warning": "yellow"}.get(sev, "white")
+            t.add_row(f"[{sev_style}]{sev}[/]", f["tool_id"], f["event"], f["message"])
+        console.print(t)
+
+    contract = assessment["contract"]
+    if contract.get("missing_fields"):
+        console.print(f"\n[yellow]Contract gaps:[/] {len(contract['missing_fields'])} field(s) missing across records")
+        for fname, count in list(contract["missing_fields"].items())[:6]:
+            console.print(f"  - {fname}: {count} record(s) missing")
+
+    console.print(f"\n[dim]content_hash: {assessment.get('content_hash', '?')}[/]")
+    console.print("[dim]Note: this command is read-only. Real T-1 enforcement lives in trust-kernel/airlock.[/]")
 
 
 @app.command()
