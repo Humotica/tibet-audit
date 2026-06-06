@@ -46,6 +46,7 @@ class JISIdentityFileCheck(BaseCheck):
 
     def run(self, context: dict) -> CheckResult:
         scan_path = context["scan_path"]
+        installed = context.get("installed_packages", {})
         names = ["jis.json", "jis.yaml", "identity.json", "identity.yaml", "jis_identity.json"]
         hits = _find_files(scan_path, names)
         if hits:
@@ -56,6 +57,16 @@ class JISIdentityFileCheck(BaseCheck):
                 severity=self.severity,
                 message=f"Found identity file(s): {', '.join(str(h) for h in hits[:3])}",
                 score_impact=0,
+            )
+        if "jis-core" in installed:
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.WARNING,
+                severity=self.severity,
+                message=f"jis-core {installed['jis-core']} installed, but no project identity file found.",
+                recommendation="Create jis.json/identity.json when this project needs a local JIS identity binding.",
+                score_impact=self.score_weight // 2,
             )
         return CheckResult(
             check_id=self.check_id,
@@ -78,8 +89,19 @@ class JISMetadataCheck(BaseCheck):
 
     def run(self, context: dict) -> CheckResult:
         scan_path = context["scan_path"]
+        installed = context.get("installed_packages", {})
         hits = _find_files(scan_path, ["jis.json", "identity.json", "identity.yaml", "jis.yaml"])
         if not hits:
+            if "jis-core" in installed:
+                return CheckResult(
+                    check_id=self.check_id,
+                    name=self.name,
+                    status=Status.WARNING,
+                    severity=self.severity,
+                    message="jis-core is installed; no project identity metadata file found to validate.",
+                    recommendation="Add owner/scope/environment fields to the project identity file when binding this project.",
+                    score_impact=self.score_weight // 2,
+                )
             return CheckResult(
                 check_id=self.check_id,
                 name=self.name,
@@ -216,6 +238,18 @@ class JISIntentDeclarationCheck(BaseCheck):
     score_weight = 8
 
     def run(self, context: dict) -> CheckResult:
+        tokens = context.get("tibet_tokens") or []
+        if tokens:
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.PASSED,
+                severity=self.severity,
+                message=f"Intent declarations observed in persisted TIBET token(s): {len(tokens)} token(s).",
+                references=["draft-vandemeent-jis-identity-01 §3.3"],
+                score_impact=0,
+            )
+
         scan_path = context["scan_path"]
         intent_patterns = [
             "intent", "erachter", "purpose", "action_reason",

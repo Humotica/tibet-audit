@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Callable
 from datetime import datetime
 import uuid
+import os
+import importlib.metadata
 
 from .checks import ALL_CHECKS, CheckResult, Status
 
@@ -122,8 +124,10 @@ class TIBETAudit:
         context = {
             "scan_path": scan_path,
             "tibet_available": self._check_tibet_available(),
+            "installed_packages": self._installed_packages(),
             "sovereign_mode": self.sovereign_mode,
         }
+        context.update(self._load_tibet_provenance(scan_path))
         if extra_context:
             context.update(extra_context)
 
@@ -252,6 +256,54 @@ class TIBETAudit:
         except Exception:
             pass  # tibet_recommendations not available
 
+    def _load_tibet_provenance(self, scan_path: Path) -> dict:
+        """Load the shared TIBET JSONL token store for provenance checks."""
+        candidates = []
+        env_store = os.getenv("TIBET_TOKEN_STORE")
+        if env_store:
+            candidates.append(Path(env_store).expanduser())
+        candidates.extend([
+            scan_path / ".tibet" / "provenance" / "tokens.jsonl",
+            Path.home() / ".tibet" / "provenance" / "tokens.jsonl",
+        ])
+
+        seen = set()
+        unique_candidates = []
+        for candidate in candidates:
+            resolved = str(candidate)
+            if resolved not in seen:
+                seen.add(resolved)
+                unique_candidates.append(candidate)
+
+        for token_path in unique_candidates:
+            if not token_path.exists():
+                continue
+            try:
+                from tibet_core import FileStore
+
+                store = FileStore(str(token_path))
+                tokens = [t.to_dict() for t in store.all()]
+                integrity = store.verify_file()
+                return {
+                    "tibet_token_store": token_path,
+                    "tibet_tokens": tokens,
+                    "tibet_token_count": len(tokens),
+                    "tibet_token_integrity": integrity,
+                }
+            except Exception as exc:
+                return {
+                    "tibet_token_store": token_path,
+                    "tibet_tokens": [],
+                    "tibet_token_count": 0,
+                    "tibet_token_load_error": str(exc),
+                }
+
+        return {
+            "tibet_token_store": None,
+            "tibet_tokens": [],
+            "tibet_token_count": 0,
+        }
+
     def _calculate_score(self, results: List[CheckResult]) -> tuple:
         """Calculate compliance score from results."""
         max_score = 100
@@ -280,12 +332,42 @@ class TIBETAudit:
         return score, grade
 
     def _check_tibet_available(self) -> bool:
-        """Check if tibet-vault is installed."""
+        """Check if the TIBET provenance substrate is installed."""
+        return self._package_available("tibet-core") or self._package_available("tibet-vault")
+
+    def _package_available(self, package_name: str) -> bool:
         try:
-            import tibet_vault
+            importlib.metadata.version(package_name)
             return True
-        except ImportError:
+        except importlib.metadata.PackageNotFoundError:
             return False
+
+    def _installed_packages(self) -> dict:
+        watched = [
+            "tibet",
+            "tibet-core",
+            "jis-core",
+            "snaft",
+            "tibet-snaft",
+            "tibet-audit",
+            "tibet-cmail",
+            "tibet-continuityd",
+            "tibet-cap-bus",
+            "tibet-home-agent",
+            "ainternet",
+            "ipoll",
+            "tibet-mux",
+            "tibet-overlay",
+            "tibet-triage",
+            "tibet-airlock",
+        ]
+        installed = {}
+        for package_name in watched:
+            try:
+                installed[package_name] = importlib.metadata.version(package_name)
+            except importlib.metadata.PackageNotFoundError:
+                pass
+        return installed
 
     def get_fixable_issues(self, results: List[CheckResult]) -> List[CheckResult]:
         """Get list of issues that can be auto-fixed."""

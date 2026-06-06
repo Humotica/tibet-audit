@@ -92,6 +92,7 @@ class SNAFTRulesCheck(BaseCheck):
 
     def run(self, context: dict) -> CheckResult:
         scan_path = context["scan_path"]
+        installed = context.get("installed_packages", {})
 
         # Look for SNAFT rule files
         snaft_patterns = [
@@ -138,6 +139,17 @@ class SNAFTRulesCheck(BaseCheck):
                 message=f"SNAFT rules found: {', '.join(str(f.name) for f in snaft_files[:3])}",
                 score_impact=0,
             )
+        elif "snaft" in installed or "tibet-snaft" in installed:
+            version = installed.get("snaft") or installed.get("tibet-snaft")
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.WARNING,
+                severity=self.severity,
+                message=f"SNAFT package installed ({version}), but no project/system rule files found",
+                recommendation="Expose the active SNAFT rules or runtime evidence so audit can verify configuration, not just installation.",
+                score_impact=self.score_weight // 2,
+            )
         elif snaft_in_code:
             return CheckResult(
                 check_id=self.check_id,
@@ -176,6 +188,7 @@ class JISRouterCheck(BaseCheck):
 
     def run(self, context: dict) -> CheckResult:
         scan_path = context["scan_path"]
+        installed = context.get("installed_packages", {})
 
         # Check for jis-router binary
         binary_exists, binary_path = _check_binary_exists([
@@ -232,6 +245,17 @@ class JISRouterCheck(BaseCheck):
                 recommendation="Build or install JIS Router (Rust)",
                 score_impact=self.score_weight // 2,
             )
+        elif "jis-core" in installed:
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.WARNING,
+                severity=self.severity,
+                message=f"JIS substrate installed (jis-core {installed['jis-core']}), but no router binary/source/config found",
+                recommendation="Expose or install JIS Router when this project needs the router layer, not only the core identity library.",
+                references=["https://humotica.com/docs/jis-router"],
+                score_impact=self.score_weight // 2,
+            )
 
         return CheckResult(
             check_id=self.check_id,
@@ -260,6 +284,7 @@ class TIBETEngineCheck(BaseCheck):
 
     def run(self, context: dict) -> CheckResult:
         scan_path = context["scan_path"]
+        installed = context.get("installed_packages", {})
 
         # Check for tibet-vault or tibet-engine binary
         binary_exists, binary_path = _check_binary_exists([
@@ -435,6 +460,7 @@ class ThreePillarsGateCheck(BaseCheck):
         # We just provide guidance here
 
         scan_path = context["scan_path"]
+        installed = context.get("installed_packages", {})
 
         # Quick checks for each pillar
         # Check scan_path
@@ -445,8 +471,14 @@ class ThreePillarsGateCheck(BaseCheck):
                 if sys_path.exists() and list(sys_path.glob("*.snaft*")):
                     has_snaft = True
                     break
-        has_jis, _ = _check_binary_exists(["jis-router", "jis_router", "chimera"])
-        has_tibet, _ = _check_binary_exists(["tibet-vault", "tibet_vault", "tibet"])
+        has_jis = "jis-core" in installed
+        has_tibet = "tibet-core" in installed
+        if not has_jis:
+            has_jis, _ = _check_binary_exists(["jis-router", "jis_router", "chimera"])
+        if not has_tibet:
+            has_tibet, _ = _check_binary_exists(["tibet-vault", "tibet_vault", "tibet"])
+        if not has_snaft:
+            has_snaft = "snaft" in installed or "tibet-snaft" in installed
 
         # Also check source directories
         if not has_jis:

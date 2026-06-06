@@ -31,6 +31,7 @@ from pathlib import Path
 
 from .checks.base import Status, Severity
 from . import __version__
+from .governance_conclusion import build_governance_conclusion
 
 
 # Human-readable labels — no tech jargon
@@ -125,6 +126,8 @@ def generate_auditor_report(
     if fmt == "csv":
         return _to_csv(result, org_name, now, findings, output_path)
 
+    governance_conclusion = build_governance_conclusion(result, result.scan_path)
+
     # JSON report
     report = {
         "report_type": "compliance_audit",
@@ -148,6 +151,7 @@ def generate_auditor_report(
             "not_applicable": result.skipped,
         },
         "regulation_breakdown": reg_summary,
+        "governance_conclusion": governance_conclusion,
         "findings": findings,
         "provenance": {
             "protocol": "TIBET (Token Identity Based Evidence Trail)",

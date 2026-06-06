@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tibet-audit"
-version = "0.27.0"
+version = "0.27.1"
 description = "Compliance Health Scanner — 5 IETF Internet-Drafts, 17 regulatory frameworks, 120+ checks. TIBET provenance, JIS identity, SBOM. Like Lynis, but for AI governance."
 readme = "README.md"
 license = "MIT"
@@ -82,22 +82,22 @@ dependencies = [
     # OSAPI bootstrap-pair (from 0.25.0 — first-mover on the "every touched package
     # depends on tibet-core + jis-core" discipline). Compliance scans run against
     # the central chain + identity store, not a local Provider instance.
-    "tibet-core>=0.5.0b2",
-    "jis-core>=0.4.0b1",
+    "tibet-core>=0.5.0",
+    "jis-core>=0.4.0",
 ]
 
 [project.optional-dependencies]
 tibet = [
-    "tibet-core>=0.4.0",
+    "tibet-core>=0.5.0",
     "tibet-vault>=0.3.0",
 ]
 jis = [
-    "jis-core>=0.3.0",
+    "jis-core>=0.4.0",
 ]
 full = [
-    "tibet-core>=0.4.0",
+    "tibet-core>=0.5.0",
     "tibet-vault>=0.3.0",
-    "jis-core>=0.3.0",
+    "jis-core>=0.4.0",
     "tibet-sbom>=0.2.0",
 ]
 dev = [

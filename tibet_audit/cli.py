@@ -1528,9 +1528,19 @@ AETHER_TIERS = {
 # Package categories for compliance calculation
 HUMOTICA_PACKAGES = {
     # Core audit (essential)
+    "tibet": {"weight": 20, "category": "core", "tier": "signal"},
+    "tibet-core": {"weight": 25, "category": "core", "tier": "signal"},
+    "jis-core": {"weight": 20, "category": "identity", "tier": "signal"},
+    "snaft": {"weight": 18, "category": "security", "tier": "amplify"},
     "tibet-audit": {"weight": 20, "category": "audit", "tier": "signal"},
     "tibet-chip": {"weight": 15, "category": "audit", "tier": "signal"},
     "tibet-vault": {"weight": 15, "category": "audit", "tier": "amplify"},
+    "tibet-triage": {"weight": 14, "category": "security", "tier": "amplify"},
+    "tibet-airlock": {"weight": 14, "category": "security", "tier": "amplify"},
+    "tibet-cmail": {"weight": 12, "category": "protocol", "tier": "amplify"},
+    "tibet-continuityd": {"weight": 12, "category": "runtime", "tier": "broadcast"},
+    "tibet-cap-bus": {"weight": 10, "category": "runtime", "tier": "broadcast"},
+    "tibet-home-agent": {"weight": 10, "category": "agent", "tier": "broadcast"},
 
     # MCP Servers (integration)
     "mcp-server-tibet": {"weight": 10, "category": "mcp", "tier": "signal"},
@@ -1573,47 +1583,17 @@ ZENODO_PAPERS = [
 
 def _detect_installed_packages() -> dict:
     """Detect which Humotica packages are installed."""
-    import importlib.util
-    import subprocess
+    import importlib.metadata
 
     installed = {}
-
-    # Try pip list first (most reliable)
-    try:
-        result = subprocess.run(
-            ["pip", "list", "--format=json"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        if result.returncode == 0:
-            import json as json_mod
-            pip_packages = {p["name"].lower(): p["version"] for p in json_mod.loads(result.stdout)}
-
-            for pkg_name, pkg_info in HUMOTICA_PACKAGES.items():
-                # Check both with and without hyphens/underscores
-                check_names = [
-                    pkg_name.lower(),
-                    pkg_name.lower().replace("-", "_"),
-                    pkg_name.lower().replace("_", "-"),
-                ]
-                for check_name in check_names:
-                    if check_name in pip_packages:
-                        installed[pkg_name] = {
-                            "version": pip_packages[check_name],
-                            **pkg_info
-                        }
-                        break
-    except Exception:
-        # Fallback: try importlib
-        for pkg_name, pkg_info in HUMOTICA_PACKAGES.items():
-            module_name = pkg_name.replace("-", "_")
-            try:
-                spec = importlib.util.find_spec(module_name)
-                if spec is not None:
-                    installed[pkg_name] = {"version": "unknown", **pkg_info}
-            except (ImportError, ModuleNotFoundError):
-                pass
+    for pkg_name, pkg_info in HUMOTICA_PACKAGES.items():
+        try:
+            installed[pkg_name] = {
+                "version": importlib.metadata.version(pkg_name),
+                **pkg_info,
+            }
+        except importlib.metadata.PackageNotFoundError:
+            continue
 
     return installed
 
@@ -1669,9 +1649,9 @@ def check_compliance(
     tier_info = AETHER_TIERS[current_tier]
 
     # Determine component status
-    has_jis = any(p in installed for p in ["tibet-audit", "tibet-chip", "idd-cli"])
-    has_tibet = any(p in installed for p in ["tibet-vault", "mcp-server-tibet", "tibet-audit"])
-    has_genesis = any(p in installed for p in ["mcp-server-rabel", "ainternet", "reflux-protocol"])
+    has_jis = any(p in installed for p in ["jis-core", "idd-cli", "tibet-chip"])
+    has_tibet = any(p in installed for p in ["tibet-core", "tibet-vault", "mcp-server-tibet", "tibet-audit"])
+    has_genesis = any(p in installed for p in ["tibet-genesis", "mcp-server-rabel", "ainternet", "reflux-protocol"])
     has_warroom = len(installed) >= 8
 
     if output.lower() == "json":
@@ -2684,7 +2664,7 @@ def status_dashboard(
 
     # Key package categories
     has_core = any(p in installed for p in ["tibet-core", "tibet-vault"])
-    has_security = any(p in installed for p in ["tibet-claw", "inject-bender", "tibet-pol"])
+    has_security = any(p in installed for p in ["snaft", "tibet-snaft", "tibet-claw", "tibet-airlock", "tibet-triage", "inject-bender", "tibet-pol"])
     has_audit = "tibet-audit" in installed
     has_identity = any(p in installed for p in ["jis-core", "idd-cli"])
     has_local_ai = any(p in installed for p in ["oomllama", "sensory"])
@@ -2784,7 +2764,7 @@ def status_dashboard(
     # Stack coverage
     console.print("[bold]TIBET Stack Coverage:[/]")
     console.print(f"  {'[green]OK[/]' if has_core else '[red]MISSING[/]'}  Core Provenance (tibet-core, tibet-vault)")
-    console.print(f"  {'[green]OK[/]' if has_security else '[red]MISSING[/]'}  Security (tibet-claw, inject-bender)")
+    console.print(f"  {'[green]OK[/]' if has_security else '[red]MISSING[/]'}  Security (snaft, tibet-airlock, tibet-triage)")
     console.print(f"  {'[green]OK[/]' if has_audit else '[red]MISSING[/]'}  Compliance (tibet-audit)")
     console.print(f"  {'[green]OK[/]' if has_identity else '[red]MISSING[/]'}  Identity (jis-core, idd-cli)")
     console.print(f"  {'[green]OK[/]' if has_local_ai else '[dim]N/A[/]'}  Local AI (oomllama, sensory)")
@@ -2829,7 +2809,7 @@ def status_dashboard(
         if not has_core:
             missing_pkgs.extend(["tibet-core"])
         if not has_security:
-            missing_pkgs.extend(["tibet-claw", "inject-bender"])
+            missing_pkgs.extend(["snaft", "tibet-airlock", "tibet-triage"])
         console.print(f"[bold]Quick upgrade:[/] pip install {' '.join(missing_pkgs)}")
         console.print()
 

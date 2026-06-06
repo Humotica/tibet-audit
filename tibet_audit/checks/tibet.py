@@ -57,6 +57,16 @@ def _scan_code_for_patterns(scan_path: Path, patterns: List[str], extensions: Li
     return found
 
 
+def _context_tokens(context: dict) -> List[dict]:
+    tokens = context.get("tibet_tokens") or []
+    return [t for t in tokens if isinstance(t, dict)]
+
+
+def _token_store_label(context: dict) -> str:
+    store = context.get("tibet_token_store")
+    return str(store) if store else "no shared token store"
+
+
 class TIBETTokenStructureCheck(BaseCheck):
     """Check for TIBET token creation with ERIN/ERAAN/EROMHEEN/ERACHTER fields."""
     check_id = "TIBET-001"
@@ -67,8 +77,35 @@ class TIBETTokenStructureCheck(BaseCheck):
     score_weight = 12
 
     def run(self, context: dict) -> CheckResult:
-        scan_path = context["scan_path"]
+        tokens = _context_tokens(context)
         fields = ["erin", "eraan", "eromheen", "erachter"]
+        if tokens:
+            complete = [
+                token for token in tokens
+                if all(field in token for field in fields)
+            ]
+            if len(complete) == len(tokens):
+                return CheckResult(
+                    check_id=self.check_id,
+                    name=self.name,
+                    status=Status.PASSED,
+                    severity=self.severity,
+                    message=f"{len(tokens)} persisted TIBET token(s) include ERIN/ERAAN/EROMHEEN/ERACHTER ({_token_store_label(context)})",
+                    references=["draft-vandemeent-tibet-provenance-01 §3"],
+                    score_impact=0,
+                )
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.WARNING,
+                severity=self.severity,
+                message=f"{len(complete)}/{len(tokens)} persisted token(s) include the complete 4-field structure.",
+                recommendation="Repair token serialization so every token carries ERIN, ERAAN, EROMHEEN, and ERACHTER.",
+                references=["draft-vandemeent-tibet-provenance-01 §3"],
+                score_impact=self.score_weight // 2,
+            )
+
+        scan_path = context["scan_path"]
         found = _scan_code_for_patterns(scan_path, fields)
 
         if len(found) == 4:
@@ -116,6 +153,44 @@ class TIBETTokenChainCheck(BaseCheck):
     score_weight = 10
 
     def run(self, context: dict) -> CheckResult:
+        tokens = _context_tokens(context)
+        if tokens:
+            token_ids = {token.get("token_id") or token.get("id") for token in tokens}
+            linked = [
+                token for token in tokens
+                if token.get("parent_id") and token.get("parent_id") in token_ids
+            ]
+            if len(tokens) == 1:
+                return CheckResult(
+                    check_id=self.check_id,
+                    name=self.name,
+                    status=Status.PASSED,
+                    severity=self.severity,
+                    message=f"Persistent TIBET root token found: {next(iter(token_ids))}",
+                    references=["draft-vandemeent-tibet-provenance-01 §3.5"],
+                    score_impact=0,
+                )
+            if linked:
+                return CheckResult(
+                    check_id=self.check_id,
+                    name=self.name,
+                    status=Status.PASSED,
+                    severity=self.severity,
+                    message=f"Persistent token chain detected: {len(linked)} linked child token(s) across {len(tokens)} token(s).",
+                    references=["draft-vandemeent-tibet-provenance-01 §3.5"],
+                    score_impact=0,
+                )
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.WARNING,
+                severity=self.severity,
+                message=f"{len(tokens)} persisted token(s) found, but no parent_id linkage yet.",
+                recommendation="Create subsequent tokens in the same persistent chain or provide explicit parent_id references.",
+                references=["draft-vandemeent-tibet-provenance-01 §3.5"],
+                score_impact=self.score_weight // 2,
+            )
+
         scan_path = context["scan_path"]
         chain_patterns = ["parent_id", "parent_token", "token_chain", "chain_id", "previous_token"]
         found = _scan_code_for_patterns(scan_path, chain_patterns)
@@ -156,6 +231,30 @@ class TIBETCryptoVerificationCheck(BaseCheck):
     score_weight = 10
 
     def run(self, context: dict) -> CheckResult:
+        tokens = _context_tokens(context)
+        integrity = context.get("tibet_token_integrity") or {}
+        if tokens and integrity:
+            if integrity.get("integrity"):
+                return CheckResult(
+                    check_id=self.check_id,
+                    name=self.name,
+                    status=Status.PASSED,
+                    severity=self.severity,
+                    message=f"Persistent token store verifies: {integrity.get('valid', 0)} valid, {integrity.get('invalid', 0)} invalid.",
+                    references=["draft-vandemeent-tibet-provenance-01 §4"],
+                    score_impact=0,
+                )
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.FAILED,
+                severity=self.severity,
+                message=f"Persistent token store integrity failed: {integrity.get('invalid', 0)} invalid token(s).",
+                recommendation="Inspect corrupted_ids and repair or quarantine tampered token records.",
+                references=["draft-vandemeent-tibet-provenance-01 §4"],
+                score_impact=self.score_weight,
+            )
+
         scan_path = context["scan_path"]
         crypto_patterns = [
             "hmac", "sha256", "sha-256", "hashlib", "crypto.createhmac",
@@ -196,6 +295,19 @@ class TIBETRetentionPolicyCheck(BaseCheck):
     score_weight = 6
 
     def run(self, context: dict) -> CheckResult:
+        tokens = _context_tokens(context)
+        if tokens:
+            return CheckResult(
+                check_id=self.check_id,
+                name=self.name,
+                status=Status.WARNING,
+                severity=self.severity,
+                message=f"Persistent token store found ({len(tokens)} token(s)), but no retention policy was verified.",
+                recommendation="Document retention and rotation for ~/.tibet/provenance/tokens.jsonl.",
+                references=["draft-vandemeent-tibet-provenance-01 §3.7"],
+                score_impact=self.score_weight // 2,
+            )
+
         scan_path = context["scan_path"]
         policy_files = _find_files(scan_path, [
             "*retention*", "*lifecycle*", "*policy*.md", "*policy*.txt",
@@ -238,6 +350,20 @@ class TIBETStateTransitionCheck(BaseCheck):
     score_weight = 6
 
     def run(self, context: dict) -> CheckResult:
+        tokens = _context_tokens(context)
+        if tokens:
+            states = sorted({str(token.get("state", "")).lower() for token in tokens if token.get("state")})
+            if states:
+                return CheckResult(
+                    check_id=self.check_id,
+                    name=self.name,
+                    status=Status.PASSED if len(states) >= 1 else Status.WARNING,
+                    severity=self.severity,
+                    message=f"Persistent token state(s) observed: {', '.join(states)}",
+                    references=["draft-vandemeent-tibet-provenance-01 §3.3"],
+                    score_impact=0,
+                )
+
         scan_path = context["scan_path"]
         states = ["created", "detected", "classified", "mitigated", "resolved"]
         found = _scan_code_for_patterns(scan_path, states)

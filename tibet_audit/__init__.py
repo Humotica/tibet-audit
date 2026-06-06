@@ -17,7 +17,7 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.23.0"  # ISO/EU compliance mapping: --compliance matrix, --jis export, 10 frameworks (ISO 42001/27001/23894/5338/27701, EU AI Act, NIS2, GDPR, NIST AI RMF, SOC 2)
+__version__ = "0.27.1"  # shared TIBET token-store awareness
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 
@@ -25,9 +25,11 @@ from .scanner import TIBETAudit
 from .checks.base import CheckResult, Status, Severity
 from .tibet_recommendations import get_recommendation, enrich_results, format_recommendations_summary
 from .compliance_map import get_mapping, get_framework_coverage, generate_jis_compliance_block
+from .governance_conclusion import build_governance_conclusion, evaluate_coffee_lane
 
 __all__ = [
     "TIBETAudit", "CheckResult", "Status", "Severity",
     "get_recommendation", "enrich_results", "format_recommendations_summary",
     "get_mapping", "get_framework_coverage", "generate_jis_compliance_block",
+    "build_governance_conclusion", "evaluate_coffee_lane",
 ]

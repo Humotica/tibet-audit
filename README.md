@@ -683,3 +683,21 @@ Built with 💙 by the [HumoticaOS](https://humotica.com) team:
     <img src="https://img.shields.io/badge/Powered%20by-SymbAIon-blue" alt="Powered by SymbAIon">
   </a>
 </p>
+
+
+---
+
+**Stack-positie:** Groep `evidence` · Bootstrap = OSAPI-handshake naar [`tibet`](https://pypi.org/project/tibet-core/) + [`jis`](https://pypi.org/project/jis-core/) (fail → snaft-rule + tibet-pol-rapport) · ← [`tibet-nis2`](https://pypi.org/project/tibet-nis2/) · See `STACK.md` · See `demo/golden-path/` for the spine end-to-end.
+---
+
+## Enterprise
+
+For private hub hosting, SLA support, custom integrations, or compliance guidance:
+
+| | |
+|---|---|
+| **Enterprise** | enterprise@humotica.com |
+| **Support** | support@humotica.com |
+| **Security** | security@humotica.com |
+
+See [ENTERPRISE.md](ENTERPRISE.md) for details.
