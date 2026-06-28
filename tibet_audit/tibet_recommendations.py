@@ -335,15 +335,16 @@ current_trust = check_trust_decay(
         "install": "pip install jis-core",
         "description": (
             "AINS provides DNS-like resolution for AI agents via .aint domains. "
-            "Register your agent with capabilities and trust score."
+            "Register your agent with capabilities; authority is per-action route "
+            "posture, not a stored score."
         ),
         "snippet": """\
-# Register agent via AINS API
-curl -X POST https://brein.jaspervandemeent.nl/api/ains/register \\
-  -d '{"domain":"myagent","capabilities":["chat","code"],"trust_score":0.5}'
+# Register agent via AINS API (point at your own hub, or the public commons hub)
+curl -X POST https://api.ainternet.org/api/ains/register \\
+  -d '{"domain":"myagent","capabilities":["chat","code"]}'
 
 # Resolve agent
-curl https://brein.jaspervandemeent.nl/api/ains/resolve/myagent
+curl https://api.ainternet.org/api/ains/resolve/myagent
 """,
         "references": ["IETF draft-vandemeent-ains-discovery-01 §3"],
     },

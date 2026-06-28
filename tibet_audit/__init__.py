@@ -17,7 +17,13 @@ Website: https://humotica.com
 One love, one fAmIly!
 """
 
-__version__ = "0.27.1"  # shared TIBET token-store awareness
+try:
+    # Single source of truth: the installed package metadata. Never drifts, so an
+    # audit tool always reports its own true version.
+    from importlib.metadata import version as _pkg_version
+    __version__ = _pkg_version("tibet-audit")
+except Exception:
+    __version__ = "0.28.1"  # fallback when running from an uninstalled checkout
 __author__ = "Jasper van de Meent & Root AI"
 __email__ = "team@humotica.com"
 

@@ -55,10 +55,11 @@ def _check_binary_exists(names: List[str]) -> Tuple[bool, str]:
         "/usr/local/bin",
         "/usr/bin",
         "/opt/humotica/bin",
-        "/srv/jtel-stack/jis-router/target/release",
-        "/srv/jtel-stack/jis-router/target/debug",
         Path.home() / ".cargo/bin",
     ]
+    # Opt-in extra search dirs for local builds (e.g. a Rust target dir), no
+    # hardcoded machine path shipped: TIBET_AUDIT_BIN_PATHS (os.pathsep-separated).
+    common_paths += [p for p in os.environ.get("TIBET_AUDIT_BIN_PATHS", "").split(os.pathsep) if p]
 
     for base in common_paths:
         for name in names:

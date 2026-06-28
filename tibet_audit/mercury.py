@@ -117,13 +117,21 @@ def diff_reports(old_report: Dict[str, Any], new_report: Dict[str, Any]) -> Dict
     }
 
 
-# Default high-five endpoint - HumoticaOS AETHER
-DEFAULT_HIGH_FIVE_URL = "https://brein.jaspervandemeent.nl/api/tibet/high-five"
+# High-five endpoint is OFF by default — a sovereign audit tool phones no one.
+# Opt in with AUDIT_HIGH_FIVE_URL (or pass server_url) to send a handshake ping.
+DEFAULT_HIGH_FIVE_URL = ""
 
 
 def high_five(server_url: Optional[str] = None) -> Dict[str, Any]:
-    """Send a signed handshake ping. No scan data is transmitted."""
+    """Send a signed handshake ping. No scan data is transmitted.
+
+    Off by default: with no endpoint configured this is a no-op (sovereign,
+    local-only, no external party). Opt in via AUDIT_HIGH_FIVE_URL or server_url.
+    """
     url = server_url or os.getenv("AUDIT_HIGH_FIVE_URL", DEFAULT_HIGH_FIVE_URL)
+    if not url:
+        return {"status": "skipped",
+                "reason": "no high-five endpoint configured (off by default)"}
 
     payload = {
         "timestamp": int(time.time()),

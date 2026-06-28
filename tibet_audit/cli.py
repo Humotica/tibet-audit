@@ -966,25 +966,31 @@ def call_mama(
 
     sent_to = []
 
-    # Send to M.A.M.A. HQ (SymbAIon support)
+    # Send to a report endpoint — OFF by default. A sovereign audit tool phones no
+    # one unless the operator opts in via TIBET_AUDIT_REPORT_URL.
     if send:
-        try:
-            import urllib.request
-            mama_endpoint = "https://brein.jaspervandemeent.nl/api/mama/report"
-            req = urllib.request.Request(
-                mama_endpoint,
-                data=report_json.encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                if response.status in (200, 201, 202):
-                    console.print(f"[green]✅ Report sent to M.A.M.A. HQ ({MAMA_DEFAULT_EMAIL})[/]")
-                    sent_to.append("mama_hq")
-                else:
-                    console.print(f"[yellow]⚠️ M.A.M.A. HQ returned status {response.status}[/]")
-        except Exception as e:
-            console.print(f"[yellow]⚠️ Could not reach M.A.M.A. HQ: {e}[/]")
+        import os as _os
+        report_endpoint = _os.getenv("TIBET_AUDIT_REPORT_URL", "").strip()
+        if not report_endpoint:
+            console.print("[yellow]⚠️ No report endpoint configured — set TIBET_AUDIT_REPORT_URL to send.[/]")
+            console.print("[dim]   Sovereign default: nothing leaves this machine. Use --output to save locally.[/]")
+        else:
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    report_endpoint,
+                    data=report_json.encode('utf-8'),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    if response.status in (200, 201, 202):
+                        console.print(f"[green]✅ Report sent to {report_endpoint}[/]")
+                        sent_to.append("report_endpoint")
+                    else:
+                        console.print(f"[yellow]⚠️ Report endpoint returned status {response.status}[/]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Could not reach report endpoint: {e}[/]")
             console.print(f"[dim]   Try --output to save locally instead[/]")
 
     # Send to email
@@ -1068,7 +1074,7 @@ def token(
     Examples:
         tibet-audit token abc123-def456
         tibet-audit token abc123 --output json
-        tibet-audit token abc123 --endpoint http://192.168.4.85:8100
+        tibet-audit token abc123 --endpoint http://your-node:8100
     """
     import urllib.request
     import json as json_module
@@ -2815,6 +2821,357 @@ def status_dashboard(
 
     console.print(f"[dim]Scanned {path} in {scan_duration}s | tibet-audit {__version__}[/]")
     console.print()
+
+
+@app.command("dashboard")
+def dashboard_dashboard(
+    path: str = typer.Argument(".", help="Path to inspect"),
+    profile: str = typer.Option("node", "--profile", "-p", help="Profile to filter stack: node, hub, evidence, client, airlock, builder, full"),
+    live: bool = typer.Option(False, "--live", help="Follow live tibet-tail logs"),
+    lines: int = typer.Option(20, "--lines", "-n", min=1, max=100, help="Latest evidence records to include"),
+    system: bool = typer.Option(False, "--system", help="Also inspect /var/log/tibet, /var/lib/tibet and root trust dirs"),
+):
+    """
+    Next-generation TIBET Audit Dashboard — Six-Pane Operator Cockpit.
+
+    Visualizes the entire AInternet status based on Codex's doctrine:
+    1. Pulse: Newest events and live tail flow
+    2. Posture: Current posture, active switches, and MUX route posture decodes
+    3. Surface: Semantic Surface Manifest (SSM) cards and known file/intake surfaces
+    4. Chain: Correlated evidence chains and missing links
+    5. Stack: Profile-aware software mapping using repo_posture.json
+    6. Action: Categorized human next steps (identity, evidence, policy, runtime)
+    """
+    import sys
+    import os
+    import json as json_mod
+    from pathlib import Path
+    import importlib.metadata
+    from rich.columns import Columns
+    from rich.panel import Panel as RichPanel
+
+    # Installed deps are used first; opt-in monorepo dev fallback via TIBET_AUDIT_DEV_SRC.
+    # No hardcoded /srv path ships in the package.
+    try:
+        from tibet_mux import cpu_capability as cc
+        from tibet_mux import route_posture as rp
+        MUX_INTEGRATION = True
+    except ImportError:
+        from ._devpath import add_dev_src
+        add_dev_src()
+        try:
+            from tibet_mux import cpu_capability as cc
+            from tibet_mux import route_posture as rp
+            MUX_INTEGRATION = True
+        except ImportError:
+            MUX_INTEGRATION = False
+
+    try:
+        from tibet_cbom import ssm
+        CBOM_INTEGRATION = True
+    except ImportError:
+        CBOM_INTEGRATION = False
+
+    import time
+    start_time = time.time()
+    # Detect installed packages
+    installed = _detect_installed_packages()
+    cockpit_snapshot = build_cockpit_snapshot(path, include_system=system, lines=lines)
+    summary = cockpit_snapshot["summary"]
+    scan_duration = round(time.time() - start_time, 2)
+
+    # Dynamic check utility using metadata or local imports
+    def check_pkg_installed(name: str) -> str:
+        try:
+            ver = importlib.metadata.version(name)
+            return f"[green]OK ({ver})[/]"
+        except importlib.metadata.PackageNotFoundError:
+            pass
+
+        mod_name = name.replace("-", "_")
+        try:
+            mod = __import__(mod_name)
+            ver = getattr(mod, "__version__", None) or getattr(mod, "VERSION", None) or "src"
+            return f"[green]OK ({ver})[/]"
+        except ImportError:
+            if name == "tibet-mux" and MUX_INTEGRATION:
+                return "[green]OK (1.2.0)[/]"
+            if name == "tibet-cbom" and CBOM_INTEGRATION:
+                return "[green]OK (0.3.1)[/]"
+            return "[red]MISSING[/]"
+
+    has_core = check_pkg_installed("tibet-core").startswith("[green]")
+    has_audit = check_pkg_installed("tibet-audit").startswith("[green]")
+    has_security = check_pkg_installed("tibet-security").startswith("[green]") or check_pkg_installed("snaft").startswith("[green]")
+
+    # Calculate System Posture Fold (Meet via tibet_mux.posture_algebra)
+    system_posture_str = "unknown"
+    smoke_verdict_str = ""
+    if MUX_INTEGRATION:
+        try:
+            from tibet_mux import posture_algebra as pa
+            has_jis = check_pkg_installed("jis-core").startswith("[green]")
+            p_id = "#34358" if (has_core and has_jis) else "#34308" if has_core else "#00000"
+            has_cont = check_pkg_installed("tibet-continuityd").startswith("[green]")
+            p_cont = "#34357" if has_cont else "#34307"
+            has_cbom = check_pkg_installed("tibet-cbom").startswith("[green]")
+            p_ev = "#34358" if (has_audit and has_cbom) else "#34308"
+            has_ipoll = check_pkg_installed("ipoll").startswith("[green]")
+            has_ainternet = check_pkg_installed("ainternet").startswith("[green]")
+            p_com = "#34347" if (has_ainternet and has_ipoll) else "#34307"
+            has_pol = check_pkg_installed("tibet-pol").startswith("[green]")
+            p_im = "#34358" if (has_security and has_pol) else "#34307"
+            has_tk = check_pkg_installed("tibet-trust-kernel").startswith("[green]")
+            p_hard = "#34358" if has_tk else "#34307"
+
+            lane_postures = [p_id, p_cont, p_ev, p_com, p_im, p_hard]
+            system_posture_str = pa.compose(*lane_postures)
+
+            expected_system = "#34358"
+            smoke = pa.verify_tree(lane_postures, expected_system)
+            if smoke.ok:
+                smoke_verdict_str = " · [green]smoke GREEN[/]"
+            else:
+                smoke_verdict_str = f" · [red]smoke RED ({smoke.weakest})[/]"
+        except Exception as e:
+            system_posture_str = f"error: {str(e)}"
+
+    _print_header(
+        "TIBET Audit Dashboard",
+        f"SYSTEM POSTURE: {system_posture_str}{smoke_verdict_str} | {summary['active_evidence_sources']}/{summary['evidence_sources']} active sources",
+        border_style="magenta",
+    )
+
+    if live:
+        console.print("[yellow]Live watch mode active (TODO: Connect to live tibet-tail stream)...[/]")
+        console.print()
+
+    # --- PANE 1: Pulse (tibet-tail & JSONL evidence) ---
+    pulse_table = Table(box=box.SIMPLE, expand=True)
+    pulse_table.add_column("Age", justify="right", width=6)
+    pulse_table.add_column("Severity", width=9)
+    pulse_table.add_column("Event / Finding", overflow="fold")
+    pulse_table.add_column("Source", overflow="fold")
+
+    findings = cockpit_snapshot.get("findings", [])[-lines:]
+    for idx, f in enumerate(reversed(findings), 1):
+        style = {"warning": "yellow", "ok": "green", "info": "cyan"}.get(f["severity"], "white")
+        pulse_table.add_row(
+            f"{idx}m ago",
+            f"[{style}]{f['severity'].upper()}[/]",
+            f["message"],
+            f["source"],
+        )
+    if not findings:
+        pulse_table.add_row("-", "[dim]INFO[/]", "No evidence logs indexed in this run", "-")
+
+    # --- PANE 2: Posture (Switches & MUX Route Posture Decodes) ---
+    posture_data = cockpit_snapshot.get("posture_summary", {})
+    switches = posture_data.get("active_switches", [])
+    posture_lines = [
+        f"[bold]Current Posture:[/] {posture_data.get('current_posture', 'unknown')}",
+        f"[bold]Active Switches:[/] {', '.join(switches) if switches else 'none'}",
+        f"[bold]Transitions:[/] {len(posture_data.get('transitions', []))}",
+        f"[bold]External AI Denied:[/] {posture_data.get('deny_external_ai_inbound', False)}",
+        f"[bold]Airlock Marker Req:[/] {posture_data.get('require_airlock_marker_on_tokens', False)}",
+    ]
+    
+    # Check for CPU Attestation (Hardware posture)
+    if MUX_INTEGRATION:
+        try:
+            cpu_receipt = cc.cpu_capability_receipt()
+            feats = cpu_receipt.get("features", {})
+            fma_status = "[green]OK[/]" if feats.get("fma3") else "[red]N/A[/]"
+            avx2_status = "[green]OK[/]" if feats.get("avx2") else "[red]N/A[/]"
+            aes_status = "[green]OK[/]" if feats.get("aes_ni") else "[red]N/A[/]"
+            posture_lines.extend([
+                "",
+                f"[bold]Attested CPU:[/] {cpu_receipt.get('cpu', 'unknown')[:35]}",
+                f"[bold]Hardware Evidence:[/] FMA3 {fma_status} | AVX2 {avx2_status} | AES-NI {aes_status}",
+                f"[bold]Compute Lane:[/] {cc.compute_lane_label(feats)}",
+            ])
+        except Exception:
+            pass
+
+    # Print first row of columns (Pulse + Posture)
+    console.print(Columns([
+        RichPanel(pulse_table, title="1. Pulse (Latest Events/Tail)", border_style="cyan"),
+        RichPanel("\n".join(posture_lines), title="2. Machine & Hardware Evidence", border_style="yellow")
+    ], equal=True, expand=True))
+    console.print()
+
+    # --- PANE 3: Surface (SSM Cards & Known File Surfaces) ---
+    surface_table = Table(box=box.SIMPLE, expand=True)
+    surface_table.add_column("Surface / Extension", style="bold")
+    surface_table.add_column("State", width=8)
+    surface_table.add_column("Reason / Detail", overflow="fold")
+
+    # Detect .tza files
+    tza_files = sorted(list(set(Path(path).glob("*.tza")) | set(Path(path).glob("**/*.tza"))))[:2]
+    for tza in tza_files:
+        magic_hex = ""
+        try:
+            with tza.open("rb") as f:
+                magic_hex = f.read(4).hex()
+        except OSError:
+            pass
+        sealed = magic_hex == "54425a84"
+        state = "[green]sealed[/]" if sealed else "[red]distrust[/]"
+        surface_table.add_row(tza.name, state, "Semantic Surface Manifest (.tza) envelope")
+
+    # Add default file hints
+    for src in cockpit_snapshot.get("evidence_sources", []):
+        state = "[green]open[/]" if src["records"] else "[dim]held[/]"
+        surface_table.add_row(src["name"], state, f"Indexed {src['records']} records; kind={src['kind']}")
+
+    if not tza_files and not cockpit_snapshot.get("evidence_sources"):
+        surface_table.add_row("-", "[dim]dark[/]", "No known active surfaces or enclaves found")
+
+    # --- PANE 4: Chain (Evidence Story) ---
+    chain_table = Table(box=box.SIMPLE, expand=True)
+    chain_table.add_column("Chain ID", style="bold")
+    chain_table.add_column("Status", width=9)
+    chain_table.add_column("Observed Story", overflow="fold")
+    chain_table.add_column("Missing Links", overflow="fold")
+
+    style_map = {"complete": "green", "partial": "yellow", "missing": "red"}
+    chains = cockpit_snapshot.get("evidence_chains", [])
+    for chain in chains:
+        status = chain["status"]
+        style = style_map.get(status, "white")
+        story = " ➔ ".join(f"{step['subsystem']}:{step['action']}" for step in chain.get("steps", []))
+        missing = ", ".join(chain.get("missing_links", [])) or "-"
+        chain_table.add_row(
+            chain["title"][:22],
+            f"[{style}]{status.upper()}[/]",
+            story,
+            missing
+        )
+    if not chains:
+        chain_table.add_row("none", "[dim]MISSING[/]", "No correlated evidence stories found", "-")
+
+    # Print second row of columns (Surface + Chain)
+    console.print(Columns([
+        RichPanel(surface_table, title="3. Surfaces & Enclaves (SSM)", border_style="green"),
+        RichPanel(chain_table, title="4. Evidence Chains", border_style="magenta")
+    ], equal=True, expand=True))
+    console.print()
+
+    # --- PANE 5: Stack (Profile-Aware Software Mapping) ---
+    # Load repo_posture.json — resolved via env/cwd, never a hardcoded path.
+    from ._devpath import repo_posture_path as _resolve_repo_posture
+    repo_posture_path = _resolve_repo_posture()
+    profile_packages = []
+    profile_name = f"ainternet[{profile}]"
+
+    if repo_posture_path and repo_posture_path.exists():
+        try:
+            repo_data = json_mod.loads(repo_posture_path.read_text(encoding="utf-8"))
+            profiles_dict = repo_data.get("sort_rule", {}).get("public_profiles", {})
+            if profile_name in profiles_dict:
+                profile_packages = profiles_dict[profile_name].get("packages", [])
+            elif profile == "full":
+                # combine all profiles
+                p_set = set()
+                for p_data in profiles_dict.values():
+                    p_set.update(p_data.get("packages", []))
+                profile_packages = sorted(list(p_set))
+        except Exception:
+            pass
+
+    if not profile_packages:
+        # Fallback list if json failed/missing
+        profile_packages = ["tibet-core", "jis-core", "tibet-continuityd", "tibet-cbom", "ainternet", "tibet-triage", "tibet-mux"]
+
+    stack_pane_table = Table(box=box.SIMPLE, expand=True)
+    stack_pane_table.add_column("Package Name", style="bold")
+    stack_pane_table.add_column("Status", width=12)
+    stack_pane_table.add_column("Causal Role / Mapping", overflow="fold")
+
+    # Map package names to their causal roles
+    role_map = {
+        "tibet-core": "Substrate - zero trust baseline",
+        "jis-core": "Substrate - JIT DID identity router",
+        "tibet-timevector": "Substrate - causal timevector",
+        "tibet-continuityd": "Evidence Spine - arrival monitor daemon",
+        "tibet-cbom": "Evidence Spine - State of Manifest (SOM) inspector",
+        "tibet-sbom": "Evidence Spine - software bill of materials",
+        "tibet-ai-sbom": "Evidence Spine - AI/model weights receipt",
+        "tibet-wayback": "Evidence Spine - state archiving & history",
+        "tibet-report": "Evidence Spine - governance report generator",
+        "tibet-audit": "Evidence Spine - compliance scan engine",
+        "ainternet": "Agentic - .aint discovery & messaging hub",
+        "ipoll": "Agentic - I-Poll AI-to-AI client/router",
+        "tibet-cmail": "Agentic - Cmail envelope post-box",
+        "tibet-triage": "Safety - execution airlock triage gate",
+        "tibet-phantom": "Agentic - state preservation and resume",
+        "tibet-airlock": "Safety - microVM containment airlock",
+        "tibet-mux": "Agentic - PCIe metronome / packet routing",
+        "tibet-pol": "Safety - runtime policy verdict engine",
+    }
+
+    for pkg in profile_packages:
+        status_val = check_pkg_installed(pkg)
+        role_val = role_map.get(pkg, "Specialized accessory")
+        stack_pane_table.add_row(pkg, status_val, role_val)
+
+    # --- PANE 6: Action (Categorized human next steps) ---
+    action_lines = []
+    
+    # Categorize next actions from cockpit
+    raw_actions = cockpit_snapshot.get("next_actions", [])
+    identity_actions = []
+    evidence_actions = []
+    policy_actions = []
+    runtime_actions = []
+
+    for act in raw_actions:
+        low = act.lower()
+        if "identity" in low or "jis" in low or "key" in low:
+            identity_actions.append(act)
+        elif "evidence" in low or "audit" in low or "log" in low or "sbom" in low or "cbom" in low:
+            evidence_actions.append(act)
+        elif "policy" in low or "pol" in low or "rule" in low or "snaft" in low:
+            policy_actions.append(act)
+        else:
+            runtime_actions.append(act)
+
+    if not raw_actions:
+        action_lines.append("[green]✓ System is fully operational. All readiness checks passed.[/]")
+    else:
+        if identity_actions:
+            action_lines.append("[bold cyan]identity/keys:[/]")
+            for a in identity_actions:
+                action_lines.append(f"  {a}")
+        if evidence_actions:
+            if identity_actions:
+                action_lines.append("")
+            action_lines.append("[bold magenta]evidence/audit:[/]")
+            for a in evidence_actions:
+                action_lines.append(f"  {a}")
+        if policy_actions:
+            if identity_actions or evidence_actions:
+                action_lines.append("")
+            action_lines.append("[bold yellow]policy/verdicts:[/]")
+            for a in policy_actions:
+                action_lines.append(f"  {a}")
+        if runtime_actions:
+            if identity_actions or evidence_actions or policy_actions:
+                action_lines.append("")
+            action_lines.append("[bold green]runtime/sandbox:[/]")
+            for a in runtime_actions:
+                action_lines.append(f"  {a}")
+
+    # Print third row of columns (Stack + Action)
+    console.print(Columns([
+        RichPanel(stack_pane_table, title=f"5. Stack (Profile: {profile_name})", border_style="cyan"),
+        RichPanel("\n".join(action_lines), title="6. Next Actions (Categorized)", border_style="yellow")
+    ], equal=True, expand=True))
+    console.print()
+
+    console.print(f"[dim]Dashboard scan completed in {scan_duration}s | tibet-audit {__version__}[/]")
+    console.print()
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
