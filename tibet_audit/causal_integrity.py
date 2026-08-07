@@ -21,6 +21,9 @@ _KNOWN_CHAINED = [
     "tibet-trail.jsonl", "trail.jsonl", "audit.jsonl", "continuityd-audit.jsonl", "continuityd.jsonl",
     "gateway.jsonl", "pol-verdicts.jsonl", "cmail.jsonl", "cap-bus.jsonl", "snaft-audit.jsonl",
     "tibet/history.jsonl", "enclave/work-ledger.jsonl", "triage/events.jsonl",
+    # tibet-cascade — the stack-wide causal-correlation feed (JIS→TIBET→cap-bus→gateway→ping→continuityd→
+    # Phantom→evidence). Its events.jsonl is another causal spoor to verify; it correlates the sources above.
+    "cascade/events.jsonl", "cascade-events.jsonl", ".tibet/cascade/events.jsonl",
 ]
 
 _STATUS_RE = re.compile(r"0x[0-9a-fA-F]{4}(?::[a-zA-Z0-9._-]+)?")

@@ -59,6 +59,7 @@ Gulf PDPL · Privacy Act AU) · IAB-native: `ains · jis · tibet · rvp · sove
 | 25 | **connection posture (open connections)** | ✗ passive connections / network hygiene under-checked / under-enforced. |
 | 26 | **general encryption baseline** | ✗ does not actively check cipher-suites / encryption standards across the board. |
 | **27** | **human presence** (machine-floor · egress actors · humane presence) | **✅ CLOSED (read, not gauged)** — `tibet-audit bom` now READS the box's own presence evidence (owner-binding.json RVP token · custody · TPM2 substrate · expiry; presence-live.json posture) and reflects it: present / stale / deferred / unbound. Open half: fold it into the sys-bom SENSOR family (#49) so the self-portrait sees its human. |
+| 28 | **tibet-cascade** (stack-wide causal-correlation feed) | **◑ audit reads it** — the shipped cross-stack observability layer (JIS→TIBET→cap-bus→gateway→ping→continuityd→Phantom→evidence). `causal_integrity` now verifies its `cascade/events.jsonl` as another causal spoor. The box-native koepel (`tick_trail`) is the box-local embodiment of the same idea; full IAB cockpit/radar wiring (its placement note) is the open half. |
 
 ## Principle for the coupling
 
