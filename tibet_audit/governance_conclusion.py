@@ -386,6 +386,18 @@ def build_governance_conclusion(result: Any, scan_path: str | Path) -> dict[str,
     else:
         confidence = "low"
 
+    # gap #1 — causal-chain integrity (the time-vector coupling). Verify the evidence against the box's OWN
+    # hash-chained lineage, not wall-clock. A BROKEN chain is tampered/gapped evidence: it caps confidence,
+    # because no governance claim can stand on evidence that fails its own provenance.
+    try:
+        from .causal_integrity import scan_causal_integrity
+        causal_integrity = scan_causal_integrity(root)
+    except Exception as exc:  # never let the integrity check break the conclusion — degrade to unknown
+        causal_integrity = {"verdict": "unknown", "checked": 0, "sources": {}, "broken": [], "stalled": [],
+                            "error": str(exc)}
+    if causal_integrity.get("verdict") == "broken":
+        confidence = "low"
+
     if sufficient == 4 and result.failed == 0 and result.score >= 90:
         profile = "fully-compliant-candidate"
     elif sufficient >= 3 and confidence == "high":
@@ -394,6 +406,10 @@ def build_governance_conclusion(result: Any, scan_path: str | Path) -> dict[str,
         profile = "substantiated"
     else:
         profile = "baseline"
+
+    if causal_integrity.get("verdict") == "broken":
+        # tampered/gapped evidence chain — no compliance profile can stand on it, whatever the score
+        profile = "integrity-compromised"
 
     coffee_lane = evaluate_coffee_lane(
         "system",
@@ -411,7 +427,8 @@ def build_governance_conclusion(result: Any, scan_path: str | Path) -> dict[str,
         "why_status": statuses["why"],
         "overall_governance_confidence": confidence,
         "governance_profile": profile,
-        "conclusion_basis": ["ai-sbom", "cbom", "ains", "jis"],
+        "causal_integrity": causal_integrity,
+        "conclusion_basis": ["ai-sbom", "cbom", "ains", "jis", "causal-integrity"],
         "coffee_lane_recommendation": coffee_lane,
         "operational_lane_summary": operational_summary,
         "stack_sources": stack_sources,

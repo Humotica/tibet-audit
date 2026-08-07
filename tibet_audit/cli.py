@@ -104,9 +104,117 @@ def _print_header(title: str, subtitle: str | None = None, border_style: str = "
     console.print(Panel(body, border_style=border_style, padding=(0, 2)))
 
 
+def _causal_integrity_line(ci: dict | None) -> str:
+    """One line on causal-chain integrity: evidence verified against the box's OWN lineage, not wall-clock."""
+    if not ci or ci.get("verdict") == "unknown":
+        return "[bold]Causal integrity:[/] [dim]not evaluated[/]"
+    checked = ci.get("checked", 0)
+    if ci.get("verdict") == "broken":
+        first = (ci.get("broken") or [{}])[0]
+        return (f"[bold]Causal integrity:[/] [bold red]BROKEN[/] — "
+                f"{first.get('source', '?')} @rec {first.get('break_at', '?')} (tampered/gapped evidence)")
+    stalled = ci.get("stalled") or []
+    if stalled:
+        return (f"[bold]Causal integrity:[/] [bold yellow]intact, {len(stalled)} open tail(s)[/] — "
+                f"{stalled[0]['source']} started but never resolved (Pol'n)")
+    return f"[bold]Causal integrity:[/] [bold green]intact[/] ({checked} chained source(s) verified)"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # COMMANDS
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.command("red-specter")
+def red_specter_cmd(
+    path: str = typer.Argument(".", help="Path to the box run / evidence to check"),
+    json_out: bool = typer.Option(False, "--json", help="Emit the regression report as JSON"),
+):
+    """Regression guards for the NIGHTFALL red-team findings (credit: Red Specter / richard.specter.aint)."""
+    from .red_specter import run_regression
+    rep = run_regression(path)
+    if json_out:
+        console.print_json(data=rep)
+        return
+    _print_header("Red Specter — red-team regression guards",
+                  rep["credit"] + "  ·  try for yourself: " + rep["credit_links"][0],
+                  border_style=("red" if rep["verdict"] == "regression" else "green"))
+    table = Table(show_header=True, header_style="bold", box=box.ROUNDED)
+    table.add_column("Guard", width=9); table.add_column("Finding", width=8)
+    table.add_column("Status", width=13); table.add_column("Detail")
+    _stcol = {"guarded": "green", "EXPOSED": "bold red", "not-observed": "dim", "error": "yellow"}
+    for r in rep["findings"]:
+        table.add_row(r["id"], r["tibet_id"],
+                      f"[{_stcol.get(r['status'], 'white')}]{r['status']}[/]", r["detail"])
+    console.print(table)
+    verdict_style = "bold red" if rep["verdict"] == "regression" else "bold green"
+    console.print(f"\n[{verdict_style}]VERDICT: {rep['verdict'].upper()}[/]"
+                  + (f"  ({rep['exposed']} finding(s) returned!)" if rep["exposed"] else "  (all fixes hold)"))
+    if rep["verdict"] == "regression":
+        raise typer.Exit(1)
+
+
+@app.command("pqc")
+def pqc_cmd(
+    path: str = typer.Argument(".", help="Path to the box run / evidence to check"),
+    json_out: bool = typer.Option(False, "--json", help="Emit the PQC/HNDL report as JSON"),
+):
+    """Flag Harvest-Now-Decrypt-Later / quantum-forgeable provenance (credit: Red Specter HNDL research)."""
+    from .pqc import scan_pqc_posture
+    rep = scan_pqc_posture(path)
+    if json_out:
+        console.print_json(data=rep)
+        return
+    _exposed = rep["verdict"] == "hndl-exposed"
+    _print_header("PQC / HNDL — quantum-forgeability posture",
+                  rep["credit"] + "  ·  " + rep["credit_links"][0],
+                  border_style=("yellow" if _exposed else "green"))
+    vcol = {"hndl-exposed": "bold yellow", "hybrid": "bold green", "pqc": "bold green",
+            "not-observed": "dim"}.get(rep["verdict"], "white")
+    lines = [f"[bold]Posture:[/] [{vcol}]{rep['verdict']}[/]", f"[dim]{rep['note']}[/]"]
+    if rep["long_lived_exposed"]:
+        lines.append(f"[bold]Long-lived provenance at risk:[/] {', '.join(rep['long_lived_exposed'])}")
+    lines.append(f"[bold]Recommendation:[/] {rep['recommendation']}")
+    console.print(Panel("\n".join(lines), title="[bold magenta]HNDL[/]", border_style="magenta"))
+
+
+@app.command("bom")
+def bom_cmd(
+    path: str = typer.Argument(".", help="Path to the box run / evidence to reflect on"),
+    json_out: bool = typer.Option(False, "--json", help="Emit the BOM reflection as JSON"),
+):
+    """Reflect on the box's sealed self-portrait: sensor readiness, digest verification, and human presence."""
+    from .bom import reflect_bom
+    rep = reflect_bom(path)
+    if json_out:
+        console.print_json(data=rep)
+        return
+    vcol = {"observed": "bold green", "partial": "bold yellow", "digest-mismatch": "bold red",
+            "not-observed": "dim", "unreadable": "bold red"}.get(rep["verdict"], "white")
+    _print_header("System-BOM — reflection on the sealed self-portrait",
+                  rep.get("card", "no sealed system-bom in scope"),
+                  border_style=("red" if rep["verdict"] in ("digest-mismatch", "unreadable") else
+                                "yellow" if rep["verdict"] == "partial" else "green"))
+    lines = [f"[bold]BOM verdict:[/] [{vcol}]{rep['verdict']}[/]"]
+    if "sensors_present" in rep:
+        lines.append(f"[bold]Sensors:[/] {rep['sensors_present']}/{rep['sensors_total']} present"
+                     + (f" · missing: {', '.join(rep['missing_sensors'])}" if rep.get("missing_sensors") else ""))
+    for c in rep.get("digest_checks", []):
+        col = {"verified": "green", "MISMATCH": "bold red", "recorded": "dim"}.get(c["status"], "white")
+        lines.append(f"  [{col}]{c['status']}[/] {c['sensor']} — {c['detail']}")
+    hp = rep.get("human_presence", {})
+    hpcol = {"present": "bold green", "stale": "bold yellow", "deferred": "yellow",
+             "unbound": "bold red"}.get(hp.get("status"), "dim")
+    hp_line = f"[bold]Human presence:[/] [{hpcol}]{hp.get('status', '?')}[/]"
+    if hp.get("owner"):
+        hp_line += f" · owner {hp['owner']}" + (f" · RVP {hp.get('rvp', {}).get('resolution')}" if hp.get("rvp") else "")
+    lines.append(hp_line)
+    lines.append(f"  [dim]{hp.get('note', '')}[/]")
+    if not hp.get("in_bom_sensor_family"):
+        lines.append("  [dim]↳ read from owner-binding/live posture; not yet a sys-bom sensor (fold: #27/#49).[/]")
+    console.print(Panel("\n".join(lines), title="[bold magenta]BOM reflection[/]", border_style="magenta"))
+    if rep["verdict"] in ("digest-mismatch", "unreadable"):
+        raise typer.Exit(1)
 
 @app.command()
 def scan(
@@ -393,6 +501,7 @@ def scan(
                     f"[bold]HOW:[/] {governance_conclusion['how_status']}   "
                     f"[bold]WHO:[/] {governance_conclusion['who_status']}   "
                     f"[bold]WHY:[/] {governance_conclusion['why_status']}",
+                    _causal_integrity_line(governance_conclusion.get("causal_integrity")),
                 ]),
                 title="[bold magenta]Governance Conclusion[/]",
                 border_style="magenta",
