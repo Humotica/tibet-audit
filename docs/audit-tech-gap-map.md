@@ -68,5 +68,19 @@ terms** — causal order and integrity first, wall-clock never as the source of 
 the crate's own verify/receipts rather than a Python re-implementation. A broken causal chain caps governance
 confidence: no claim stands on evidence that fails its own provenance. That is `audit.aint`.
 
+## North Star — a per-runtime audit layer
+
+The closing form of this map: **audit is not one central scanner, it is a layer every runtime carries.** When
+the substrate can host any runtime, each one gets its **own** audit lens — its own causal-integrity, its own
+red-team regression guards, its own presence/HNDL/BOM reflection — scoped to what it may see. Runtimes then
+**push and pull over a typed, contractual lane** (admitted on identity, content-blind between; the comms-core
+lane-contract + proof-manifest), inside a **sandbox++**: enriched, bounded autonomy where more is possible
+precisely because the boundary is *structural, not trust-based*.
+
+This is what lets a creative-but-unbounded runtime run safely: you do not tame the genius, you give it a
+structure where its verdicts gate before action (audit-as-a-precondition) and its reach is a lane it cannot
+exceed. Kerckhoffs for behaviour — it does not matter how wild the reasoning is; the structure decides what can
+carry. Each runtime sovereign, self-auditing, lane-contractual. The specialist swarm, each honest about itself.
+
 _Living document (V2). Ordering is rough priority, not fixed. Co-owned; extend as the stack grows — much of IAB
 now lands directly in Rust, so the map will keep moving._
