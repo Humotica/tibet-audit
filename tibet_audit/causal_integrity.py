@@ -86,7 +86,17 @@ def verify_file(path: Path) -> dict[str, Any] | None:
             parsed.append(None)
     chained = sum(1 for p in parsed if p and p.get("prev"))
     if chained == 0:
-        return {"source": path.name, "kind": "event-log", "records": len(raw_lines), "intact": True, "break_at": None}
+        result: dict[str, Any] = {
+            "source": path.name,
+            "kind": "event-log",
+            "records": len(raw_lines),
+            "intact": True,
+            "break_at": None,
+        }
+        last = next((p for p in reversed(parsed) if p), None)
+        if last and _tick_state(last) == "open":
+            result["open_tail"] = {"action": last["action"], "note": last["note"]}
+        return result
     intact, break_at = True, None
     for i in range(1, len(raw_lines)):
         pv = parsed[i]["prev"] if parsed[i] else ""

@@ -1,9 +1,9 @@
 """pqc.py — flag Harvest-Now-Decrypt-Later / quantum-forgeable provenance (gap #7).
 
-    Credit: Red Specter · richard.specter.aint — HNDL research, published open on Zenodo (2026-08-07):
+    Credit: external HNDL disclosure, published open on Zenodo (2026-08-07):
       https://zenodo.org/records/21834333  ·  https://zenodo.org/records/21834202
 
-Richard's point: classical signatures (Ed25519 / ECDSA / RSA) and RFC3161-style timestamps are **retroactively
+Disclosure point: classical signatures (Ed25519 / ECDSA / RSA) and RFC3161-style timestamps are **retroactively
 forgeable** once a cryptographically-relevant quantum computer exists. An audit trail is long-lived provenance
 — exactly the thing an adversary would harvest now to forge later. tibet-audit's `tls` check looks at transport
 ciphers; it never flagged this. This check does: it reads the crypto posture from the evidence and warns when
@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-CREDIT = "Red Specter · richard.specter.aint · HNDL research (Zenodo, 2026-08-07)"
+CREDIT = "External HNDL disclosure (Zenodo, 2026-08-07)"
 CREDIT_LINKS = ["https://zenodo.org/records/21834333", "https://zenodo.org/records/21834202"]
 RECOMMENDATION = "hybrid Ed25519 + ML-DSA-65 for identity signatures and long-lived audit timestamps"
 

@@ -42,6 +42,7 @@ from .cockpit import (
     load_tail_events,
 )
 from .genesis import assess_genesis_events, is_genesis_event
+from .iab import build_iab_mirror, filter_iab_mirror, render_iab_report_html, render_iab_report_markdown
 
 # Framework imports
 try:
@@ -93,6 +94,8 @@ app = typer.Typer(
     help="TIBET Audit - Compliance Health Scanner. Like Lynis, but for regulations.",
     add_completion=False,
 )
+iab_app = typer.Typer(help="Mirror IAB runtimes, raints, roles, bindings, and surfaces.")
+app.add_typer(iab_app, name="iab")
 console = Console()
 
 
@@ -130,7 +133,7 @@ def red_specter_cmd(
     path: str = typer.Argument(".", help="Path to the box run / evidence to check"),
     json_out: bool = typer.Option(False, "--json", help="Emit the regression report as JSON"),
 ):
-    """Regression guards for the NIGHTFALL red-team findings (credit: Red Specter / richard.specter.aint)."""
+    """Regression guards for the NIGHTFALL red-team findings."""
     from .red_specter import run_regression
     rep = run_regression(path)
     if json_out:
@@ -2614,6 +2617,230 @@ def evidence_index(
 
     _print_header("TIBET Evidence Index", "Local runtime evidence available to tibet-audit.", "cyan")
     _print_evidence_table(snapshot)
+
+
+@iab_app.command("mirror")
+def iab_mirror(
+    path: str = typer.Argument(".", help="IAB run root or directory containing IAB evidence"),
+    output: str = typer.Option("terminal", "--output", "-o", help="Output: terminal, json"),
+    system: bool = typer.Option(False, "--system", help="Also inspect common system IAB paths"),
+    raint: Optional[str] = typer.Option(None, "--raint", help="Filter by raint id"),
+    human: bool = typer.Option(False, "--human", help="Show human-bound events"),
+    ai: bool = typer.Option(False, "--ai", help="Show AI/autonomous events"),
+    no_binding: bool = typer.Option(False, "--no-binding", help="Show events without accountable binding"),
+    role: Optional[str] = typer.Option(None, "--role", help="Filter by role: raint, maint, saint, waint, operator, actor, system, unknown"),
+    surface: Optional[str] = typer.Option(None, "--surface", help="Filter by surface name"),
+    status: Optional[str] = typer.Option(None, "--status", help="Filter by status prefix, e.g. 0x0000 or 0x4000"),
+):
+    """
+    Mirror IAB runtime evidence as raints, roles, bindings, surfaces, and governance conclusions.
+    """
+    selected_bindings = [name for name, enabled in (
+        ("human", human),
+        ("ai", ai),
+        ("no-binding", no_binding),
+    ) if enabled]
+    if len(selected_bindings) > 1:
+        console.print("[red]Choose only one binding filter: --human, --ai, or --no-binding[/]")
+        raise typer.Exit(1)
+    binding = selected_bindings[0] if selected_bindings else None
+
+    mirror = build_iab_mirror(path, include_system=system)
+    if any([raint, binding, role, surface, status]):
+        mirror = filter_iab_mirror(
+            mirror,
+            raint=raint,
+            binding=binding,
+            role=role,
+            surface=surface,
+            status_prefix=status,
+        )
+
+    if output.lower() == "json":
+        sys.stdout.write(json.dumps(mirror, indent=2) + "\n")
+        return
+    if output.lower() != "terminal":
+        console.print(f"[red]Unsupported output: {output}[/]")
+        raise typer.Exit(1)
+
+    summary = mirror["summary"]
+    fleet = mirror.get("fleet", {})
+    _print_header(
+        "IAB Audit Mirror",
+        (
+            f"Runtimes: {summary['runtimes']} | Raints: {summary['raints']} | "
+            f"Events: {summary['events']} | No-binding: {summary['binding_counts'].get('no-binding', 0)} | "
+            f"Fleet: {fleet.get('posture', 'unknown')} ({fleet.get('materiality', 'unknown')})"
+        ),
+        "cyan",
+    )
+
+    binding_table = Table(title="Binding / Role", box=box.SIMPLE_HEAVY)
+    binding_table.add_column("Binding")
+    binding_table.add_column("Count", justify="right")
+    for name, count in sorted(summary["binding_counts"].items()):
+        binding_table.add_row(name, str(count))
+    binding_table.add_section()
+    binding_table.add_row("posture", "")
+    for name, count in sorted(summary.get("binding_posture_counts", {}).items()):
+        binding_table.add_row(f"  {name}", str(count))
+    binding_table.add_section()
+    binding_table.add_row("roles", "")
+    for name, count in sorted(summary["role_counts"].items()):
+        binding_table.add_row(f"  {name}", str(count))
+    console.print(binding_table)
+
+    raint_table = Table(title="Raints", box=box.SIMPLE_HEAVY)
+    raint_table.add_column("Raint")
+    raint_table.add_column("State")
+    raint_table.add_column("Actors")
+    raint_table.add_column("Surfaces")
+    for row in mirror.get("raints", [])[:20]:
+        raint_table.add_row(
+            row["raint"],
+            row["state"],
+            ", ".join(row.get("actors", [])) or "-",
+            ", ".join(row.get("surfaces", [])) or "-",
+        )
+    if not mirror.get("raints"):
+        raint_table.add_row("-", "no IAB evidence", "-", "-")
+    console.print(raint_table)
+
+    conclusion_table = Table(title="IAB Conclusions", box=box.SIMPLE_HEAVY)
+    conclusion_table.add_column("Conclusion")
+    conclusion_table.add_column("Status")
+    conclusion_table.add_column("Summary", overflow="fold")
+    for name, item in sorted(mirror.get("conclusions", {}).items()):
+        style = {"PASS": "green", "WARN": "yellow", "FAIL": "red"}.get(item["status"], "white")
+        conclusion_table.add_row(name, f"[{style}]{item['status']}[/]", item["summary"])
+    console.print(conclusion_table)
+
+    fleet_table = Table(title="Fleet Overview", box=box.SIMPLE_HEAVY)
+    fleet_table.add_column("Runtime")
+    fleet_table.add_column("Events", justify="right")
+    fleet_table.add_column("Raints", justify="right")
+    fleet_table.add_column("No-binding", justify="right")
+    fleet_table.add_column("Causal")
+    fleet_table.add_column("Materiality")
+    for row in mirror.get("fleet", {}).get("runtimes", [])[:20]:
+        counts = row.get("binding_counts", {})
+        fleet_table.add_row(
+            row.get("runtime_id", "-"),
+            str(row.get("events", 0)),
+            str(row.get("raints", 0)),
+            str(counts.get("no-binding", 0)),
+            row.get("causal_verdict", "unknown"),
+            row.get("materiality", "unknown"),
+        )
+    if not mirror.get("fleet", {}).get("runtimes"):
+        fleet_table.add_row("-", "0", "0", "0", "absent", "unknown")
+    console.print(fleet_table)
+
+    session_table = Table(title="Session Governance", box=box.SIMPLE_HEAVY)
+    session_table.add_column("Session")
+    session_table.add_column("Runtime")
+    session_table.add_column("Events", justify="right")
+    session_table.add_column("Lifecycle")
+    session_table.add_column("Open")
+    session_table.add_column("Materiality")
+    for row in mirror.get("sessions", [])[:20]:
+        lifecycle = "start:{} stop:{} reseed:{} resume:{}".format(
+            row.get("starts", 0),
+            row.get("stops", 0),
+            row.get("reseeds", 0),
+            row.get("resumes", 0),
+        )
+        session_table.add_row(
+            row.get("session_id", "-"),
+            row.get("runtime_id", "-"),
+            str(row.get("events", 0)),
+            lifecycle,
+            "yes" if row.get("open") else "no",
+            row.get("materiality", "unknown"),
+        )
+    if not mirror.get("sessions"):
+        session_table.add_row("-", "-", "0", "start:0 stop:0 reseed:0 resume:0", "no", "unknown")
+    console.print(session_table)
+
+    framework_table = Table(title="Framework Readout", box=box.SIMPLE_HEAVY)
+    framework_table.add_column("Framework")
+    framework_table.add_column("PASS", justify="right")
+    framework_table.add_column("WARN", justify="right")
+    framework_table.add_column("FAIL", justify="right")
+    for name, counts in sorted(mirror.get("framework_summary", {}).items()):
+        framework_table.add_row(
+            name,
+            str(counts.get("PASS", 0)),
+            str(counts.get("WARN", 0)),
+            str(counts.get("FAIL", 0)),
+        )
+    if not mirror.get("framework_summary"):
+        framework_table.add_row("-", "0", "0", "0")
+    console.print(framework_table)
+
+    event_table = Table(title="Latest Events", box=box.SIMPLE_HEAVY)
+    event_table.add_column("TS", justify="right")
+    event_table.add_column("Raint")
+    event_table.add_column("Role")
+    event_table.add_column("Binding")
+    event_table.add_column("Posture")
+    event_table.add_column("Action", overflow="fold")
+    event_table.add_column("Status")
+    for event in mirror.get("events", [])[-15:]:
+        event_table.add_row(
+            str(event.get("ts") or "-"),
+            event.get("raint") or "-",
+            event.get("role") or "-",
+            event.get("binding", {}).get("class", "-"),
+            event.get("binding_posture", {}).get("class", "-"),
+            event.get("action") or "-",
+            event.get("status") or "-",
+        )
+    if not mirror.get("events"):
+        event_table.add_row("-", "-", "-", "-", "-", "No IAB runtime evidence found", "-")
+    console.print(event_table)
+
+
+@iab_app.command("report")
+def iab_report(
+    path: str = typer.Argument(".", help="IAB run root or directory containing IAB evidence"),
+    output_path: Optional[str] = typer.Option(None, "--out", help="Write report to this path"),
+    format: str = typer.Option("markdown", "--format", "-f", help="Output: markdown, html, json"),
+    framework: Optional[str] = typer.Option(None, "--framework", help="Filter framework controls, e.g. dora, nis2, soc2"),
+    system: bool = typer.Option(False, "--system", help="Also inspect common system IAB paths"),
+    bom_root: Optional[str] = typer.Option(None, "--bom-root", help="Extra dir to scan for BOM manifests (e.g. the box's shipped manifests/ when runtime and install trees are split)"),
+):
+    """
+    Export an enterprise-readable IAB governance report from runtime evidence.
+    """
+    mirror = build_iab_mirror(path, include_system=system, bom_roots=([bom_root] if bom_root else ()))
+    fmt = format.lower()
+    if fmt == "json":
+        if framework:
+            selected = framework.lower()
+            mirror = dict(mirror)
+            mirror["framework_controls"] = [
+                control for control in mirror.get("framework_controls", [])
+                if any(selected in item.lower().replace("/", "").replace(" ", "_") or selected in item.lower()
+                       for item in control.get("frameworks", []))
+            ]
+        rendered = json.dumps(mirror, indent=2)
+    elif fmt in {"markdown", "md"}:
+        rendered = render_iab_report_markdown(mirror, framework=framework)
+    elif fmt == "html":
+        rendered = render_iab_report_html(mirror, framework=framework)
+    else:
+        console.print(f"[red]Unsupported format: {format}[/]")
+        raise typer.Exit(1)
+
+    if output_path:
+        Path(output_path).write_text(rendered, encoding="utf-8")
+        console.print(f"[green]IAB report written:[/] {output_path}")
+        return
+    if fmt == "json":
+        sys.stdout.write(rendered + "\n")
+        return
+    console.print(rendered)
 
 
 @app.command("tail")

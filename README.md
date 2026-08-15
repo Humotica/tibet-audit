@@ -11,6 +11,91 @@
 
 ---
 
+### IAB Runtime Mirror
+
+`tibet-audit` can mirror AInternet-in-a-Box runtime evidence as a fleet-level
+governance view over raints, roles, binding, surfaces, causal integrity, and
+framework controls. It is read-only: the box emits evidence, `tibet-audit`
+projects and reports it.
+
+```bash
+# Terminal view for a local IAB run/fleet root
+tibet-audit iab mirror /var/lib/ainternet-box
+
+# Machine-readable mirror for dashboards/pipelines
+tibet-audit iab mirror /var/lib/ainternet-box --output json
+
+# Enterprise report
+tibet-audit iab report /var/lib/ainternet-box --format html --out iab-audit.html
+tibet-audit iab report /var/lib/ainternet-box --format markdown --framework dora
+tibet-audit iab report /var/lib/ainternet-box --format json > iab-audit.json
+```
+
+The mirror recognizes both raw legacy box evidence and normalized
+`org.ainternet.audit.projection.v1` records from:
+
+- `audit_projection.jsonl`
+- `audit/projection.jsonl`
+- `tibet/audit_projection.jsonl`
+- `tibet/history.jsonl`
+- `enclave/work-ledger.jsonl`
+- `enclave/mux-events.jsonl`
+- `triage/events.jsonl`
+- `gateway.jsonl`
+
+Runtime evidence is mapped to NIS2, DORA, SOC 2, ISO/IEC 42001, NIST AI RMF, EU
+AI Act, and SR 26-2-style broader governance controls.
+
+---
+
+### NEW in v0.29.0: Binding Posture & Session Governance
+
+The IAB mirror now separates *what kind of binding a class is* from *how material
+the lack of an accountable owner is* — so quiet infrastructure no longer drowns
+out the events that actually need human oversight.
+
+- **No fourth binding class.** The binding class stays a clean triad —
+  `human` | `ai` | `no-binding`. Nothing is invented on that axis.
+- **`binding_posture` — a separate, richer read.** Each event is additionally
+  classified into one of six postures, with a materiality level:
+  - `human_bound` — a human is the accountable owner (low)
+  - `ai_bound` — an AI acts under a declared identity (medium)
+  - `system_infra` — a bare infrastructure tick with no actor/presence by
+    nature, e.g. `missing-actor-and-presence` / `system-event` (low)
+  - `authorized_headless` — headless but carrying a `granted_by` / `mandate`
+    (the matryoshka case: nested authority, read from the projection) (medium)
+  - `escaped_unbound` — an explicit `no-binding` / dark action with no mandate (high)
+  - `unknown_no_mandate` — no owner and no mandate could be resolved (high)
+- **`granted_by` and `mandate` are carried through** from the projection records,
+  so a headless-but-authorized action is no longer mistaken for an escape.
+- **Human-oversight fails on real risk, not on quiet infra.** The
+  `human_oversight` conclusion now trips on `escaped_unbound + unknown_no_mandate`
+  only — `system_infra` ticks stay visible but do not pull the verdict red.
+  A run of *74 no-binding events* that used to read as one red block now resolves
+  into *70 quiet system-infra + 4 genuinely risky* — the four you should look at.
+- **Session governance.** Events are grouped by `session_id` with counts of
+  `start` / `stop` / `reseed` / `resume`, open (untailed) sessions, and per-session
+  materiality — surfaced in the CLI and in the Markdown/HTML reports.
+- **BOM evidence family.** The report now mirrors and grades the box's bills of
+  materials as an evidence family — `system-bom`, `sbom`, `ai-sbom`, `cbom`,
+  `mux-bom`, `source-reproducible`, `hash-manifest`, `release-signature`. Detected
+  by artifact-name + schema (a BOM is evidence, not a package install), read-only
+  and tolerant: each is graded **complete / partial / missing / stale / unlinked**,
+  and a missing BOM is a posture, never a hard failure. On a revived box the same
+  member can appear more than once — the instance count states the mess instead of
+  hiding it. Point `--bom-root <dir>` at a shipped `manifests/` directory when the
+  runtime and install trees are split; a co-located install is auto-discovered.
+  So the audit says not only *what happened*, but *what the machine, runtime and
+  workload were built from* when it happened.
+
+```bash
+# posture counts + session governance appear in the standard mirror/report
+tibet-audit iab mirror /var/lib/ainternet-box --system
+tibet-audit iab report /var/lib/ainternet-box --format html --out iab-audit.html
+```
+
+---
+
 ### NEW in v0.23.0: ISO/EU Compliance Mapping
 
 Every check is now cross-referenced to the exact ISO clause and EU article it satisfies.

@@ -23,9 +23,9 @@ try:
     from importlib.metadata import version as _pkg_version
     __version__ = _pkg_version("tibet-audit")
 except Exception:
-    __version__ = "0.28.1"  # fallback when running from an uninstalled checkout
+    __version__ = "0.29.0"  # fallback when running from an uninstalled checkout
 __author__ = "Jasper van de Meent & Root AI"
-__email__ = "team@humotica.com"
+__email__ = "info@humotica.com"
 
 from .scanner import TIBETAudit
 from .checks.base import CheckResult, Status, Severity

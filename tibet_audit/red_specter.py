@@ -3,10 +3,10 @@
     ┌───────────────────────────────────────────────────────────────────────────┐
     │  CREDIT — these guards exist because of a real adversary who did it right.   │
     │                                                                             │
-    │  Red Specter · richard.specter.aint                                         │
+    │  External red-team disclosure                                               │
     │  NIGHTFALL engagement, 2026-08-06 (RS2026-002).                             │
     │                                                                             │
-    │  Richard found that the TIBET ledger was forgeable (T143) and that tool     │
+    │  The disclosure found that the TIBET ledger was forgeable (T143) and that   │
     │  manifests were unsigned and injectable (T152), and flagged that tombstoned │
     │  identities could still be accepted as callers (MED). Every finding below   │
     │  is his. Turning them into permanent regression guards is the most durable  │
@@ -17,7 +17,7 @@
 A red-team finding fixed once can silently return. These checks assert each NIGHTFALL fix still holds — where
 possible they are *self-proving*: they reproduce the original attack and require the defence to catch it, so if
 the defence ever regresses, the guard turns EXPOSED. Read-only against real evidence; synthetic repros run in a
-temp dir. tibet-audit is MIT — these guards are open, verifiable, and Richard is credited in the open.
+temp dir. tibet-audit is MIT — these guards are open and verifiable.
 """
 from __future__ import annotations
 
@@ -27,9 +27,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-CREDIT = "Red Specter · richard.specter.aint · NIGHTFALL RS2026-002 (2026-08-06)"
-# Richard publishes his research in the open (Zenodo). tibet-audit is MIT — these guards are open too, and the
-# repo is his to try: github.com/Humotica/tibet-audit  ·  "try for yourself".
+CREDIT = "External red-team disclosure · NIGHTFALL RS2026-002 (2026-08-06)"
+# Public disclosure references. tibet-audit is MIT — these guards are open too.
 CREDIT_LINKS = ["https://zenodo.org/records/21834333", "https://zenodo.org/records/21834202"]
 
 
@@ -44,7 +43,7 @@ def _check_c1_ledger_tampering(scan_path: Path) -> dict[str, Any]:
     for ev in ({"kind": "up", "note": "a"}, {"kind": "reach", "note": "b"}, {"kind": "seal", "note": "c"}):
         t = dict(ev); t["prev"] = prev
         ln = json.dumps(t) + "\n"; lines.append(ln); prev = hashlib.sha256(ln.encode()).hexdigest()
-    lines[1] = lines[1].replace('"b"', '"b-TAMPERED"')          # Richard's T143, in miniature
+    lines[1] = lines[1].replace('"b"', '"b-TAMPERED"')          # T143, in miniature
     (tmp / "trail.jsonl").write_text("".join(lines))
     detector_catches = scan_causal_integrity(tmp)["verdict"] == "broken"
 
@@ -76,8 +75,7 @@ def _iter_waint_manifests(scan_path: Path, limit: int = 200):
 
 
 def _check_c2_manifest_injection(scan_path: Path) -> dict[str, Any]:
-    """T152 — unsigned .waint.json tool-manifest injection (persistence). Fix C2: sign + admit on read.
-    Any executable tool manifest without a signature is the exact exposure Richard planted a backdoor through."""
+    """T152 — unsigned .waint.json tool-manifest injection (persistence). Fix C2: sign + admit on read."""
     unsigned = []
     total = 0
     for p in _iter_waint_manifests(scan_path):
